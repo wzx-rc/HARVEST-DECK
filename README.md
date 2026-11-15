@@ -6,6 +6,11 @@ Kit pour prototyper des idées jouables qui tournent **dans** Sunflower Land, so
 
 Il n'y a pas besoin de forker tout le jeu : un Portal est une simple page web, et ce kit reprend les quelques fonctions du jeu dont un Portal a besoin.
 
+## Harvest Desk
+
+`harvest-desk/` : l'app PC (Electron) de suivi de la ferme, venue du dépôt NoteIt le 15/11/2026. Voir `harvest-desk/README.md`.
+La tâche `.github/workflows/money-tree.yml` relit la ferme toutes les 10 minutes pour la page « Pops Money Tree » (secret `SFL_API_KEY` à ajouter dans les réglages du dépôt).
+
 ## Ce qu'il y a dedans
 
 - `kit/` : la liaison avec le jeu.
