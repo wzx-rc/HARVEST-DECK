@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 .env.local
+ios/HarvestDesk/Resources/core.js
+ios/*.xcodeproj
+ios/build/

@@ -1,0 +1,122 @@
+name: App iPhone et iPad (.ipa)
+
+# Compile l'app iOS (iPhone + iPad + widget) sans signature, et prend des captures du simulateur.
+# Le .ipa est dans les artefacts du run ; les captures sur la branche ios-shots.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, claude/project-thread-u21pvl]
+    paths: ["ios/**", "harvest-desk/src/**", ".github/workflows/ios.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Calculs de l'app PC pour iOS (core.js)
+        working-directory: harvest-desk
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run mobile:core
+
+      - name: Projet Xcode
+        working-directory: ios
+        run: |
+          brew install xcodegen >/dev/null
+          xcodegen generate
+
+      - name: Compiler pour iPhone et iPad (sans signature)
+        working-directory: ios
+        run: |
+          xcodebuild build -project HarvestDesk.xcodeproj -scheme HarvestDesk -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            > build.log 2>&1 || { grep -E "error:" build.log | head -80; tail -40 build.log; exit 1; }
+          tail -3 build.log
+
+      - name: Emballer le .ipa
+        working-directory: ios
+        run: |
+          mkdir -p out/Payload
+          cp -R build/Build/Products/Release-iphoneos/HarvestDesk.app out/Payload/
+          ls out/Payload/HarvestDesk.app/PlugIns
+          cd out && zip -qry HarvestDesk.ipa Payload && ls -lh HarvestDesk.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HarvestDesk-ipa
+          path: ios/out/HarvestDesk.ipa
+          retention-days: 30
+
+      - name: Compiler pour le simulateur
+        working-directory: ios
+        run: |
+          xcodebuild build -project HarvestDesk.xcodeproj -scheme HarvestDesk -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath simbuild \
+            CODE_SIGNING_ALLOWED=NO > sim.log 2>&1 || { grep -E "error:" sim.log | head -60; exit 1; }
+
+      - name: Captures (iPhone et iPad)
+        working-directory: ios
+        run: |
+          set -e
+          APP=simbuild/Build/Products/Debug-iphonesimulator/HarvestDesk.app
+          node -e '
+            const fx = require("../harvest-desk/src/demo/fixture.json"), fs = require("fs");
+            fs.mkdirSync("demo", { recursive: true });
+            fs.writeFileSync("demo/farm.json", JSON.stringify({ farm: fx.farm, id: fx.farmId }));
+            fs.writeFileSync("demo/market.json", JSON.stringify(fx.market));
+            fs.writeFileSync("demo/snapshots.json", JSON.stringify(fx.snapshots));'
+          pick() { xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for r in sorted(d, reverse=True) if 'iOS' in r for x in d[r] if x['name'].startswith(sys.argv[1])))" "$1"; }
+          mkdir -p shots
+          for dev in "iPhone 16 Pro" "iPad Pro 13"; do
+            U=$(pick "$dev"); echo "$dev -> $U"
+            xcrun simctl boot "$U" || true
+            xcrun simctl bootstatus "$U" -b >/dev/null
+            xcrun simctl status_bar "$U" override --time 9:41 --batteryLevel 100 --cellularBars 4 || true
+            xcrun simctl install "$U" "$APP"
+            DATA=$(xcrun simctl get_app_container "$U" com.wzx.harvestdesk data)
+            mkdir -p "$DATA/Library/Application Support"
+            cp demo/*.json "$DATA/Library/Application Support/"
+            name=$(echo "$dev" | tr ' ' '-')
+            for tab in timers revenue procs value settings gallery; do
+              xcrun simctl launch "$U" com.wzx.harvestdesk -tab $tab >/dev/null
+              sleep 7
+              xcrun simctl io "$U" screenshot "shots/$name-$tab.png" >/dev/null
+              xcrun simctl terminate "$U" com.wzx.harvestdesk || true
+            done
+            xcrun simctl shutdown "$U" || true
+          done
+          ls -la shots
+
+      - name: Publier les captures (branche ios-shots)
+        if: always()
+        working-directory: ios
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -d shots ] || exit 0
+          cd shots
+          git init -q -b ios-shots
+          git config user.name "harvest-desk-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add . && git commit -q -m "Captures iOS ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ios-shots
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs
+          path: ios/*.log

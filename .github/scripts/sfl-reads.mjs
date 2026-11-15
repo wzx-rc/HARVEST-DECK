@@ -1,6 +1,8 @@
 // One reading of the farm for Harvest Desk's Money Tree page, appended to a JSONL file.
 // Run by .github/workflows/money-tree.yml. Never prints the key.
 // Row: { at, c: [Basic, Ancient, Sacred Tree chops], mt: last Money Tree pop, tree, mult }.
+// Also keeps snapshots.json next to it: the farm's activity counters, the first reading of each
+// day plus the latest one, over 35 days. The iOS app reads it to work out the income per day.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const file = process.argv[2] || "reads.jsonl";
@@ -35,4 +37,19 @@ if (mt) {
 const old = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean) : [];
 const kept = old.filter((l) => { try { return JSON.parse(l).at > row.at - KEEP; } catch { return false; } });
 writeFileSync(file, [...kept, JSON.stringify(row)].join("\n") + "\n");
+// Daily counters for the income (same counters as the desktop app keeps: electron/sfl.ts → trimActivity).
+const snapFile = file.replace(/[^/]*$/, "snapshots.json");
+const activity = {};
+for (const [k, v] of Object.entries(fa)) {
+  if (/(Mined|Crafted|Fed|Collected|Harvested|Planted|Seed Bought|Chopped|Fertilised|Drilled)$/.test(k)) activity[k] = v;
+}
+let snaps = [];
+try { snaps = JSON.parse(readFileSync(snapFile, "utf8")); } catch { /* first run */ }
+const day = (t) => Math.floor(t / 86_400_000);
+const n = snaps.length;
+if (n >= 2 && day(snaps[n - 1].at) === day(row.at) && day(snaps[n - 2].at) === day(row.at)) snaps[n - 1] = { at: row.at, farmActivity: activity };
+else snaps.push({ at: row.at, farmActivity: activity });
+snaps = snaps.filter((x) => x.at > row.at - 35 * 86_400_000);
+writeFileSync(snapFile, JSON.stringify(snaps));
+
 console.log(`ok: ${kept.length + 1} readings${row.tree ? `, last pop on ${row.tree}` : ""}`);
