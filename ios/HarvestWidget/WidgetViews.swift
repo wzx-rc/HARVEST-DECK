@@ -91,8 +91,10 @@ struct WidgetRow: View {
 }
 
 struct HarvestWidgetView: View {
-    @Environment(\.widgetFamily) private var family
     let entry: FarmEntry
+    var forced: WidgetFamily? = nil
+    @Environment(\.widgetFamily) private var envFamily
+    private var family: WidgetFamily { forced ?? envFamily }
 
     var body: some View {
         switch family {

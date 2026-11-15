@@ -11,8 +11,7 @@ struct WidgetGallery: View {
     }
 
     private func face(_ family: WidgetFamily, _ w: CGFloat, _ h: CGFloat) -> some View {
-        HarvestWidgetView(entry: entry)
-            .environment(\.widgetFamily, family)
+        HarvestWidgetView(entry: entry, forced: family)
             .padding(16)
             .frame(width: w, height: h)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -24,9 +23,9 @@ struct WidgetGallery: View {
                 HStack(spacing: 18) {
                     face(.systemSmall, 170, 170)
                     VStack(alignment: .leading, spacing: 8) {
-                        HarvestWidgetView(entry: entry).environment(\.widgetFamily, .accessoryRectangular)
+                        HarvestWidgetView(entry: entry, forced: .accessoryRectangular)
                             .frame(width: 160, height: 72).foregroundStyle(.white)
-                        HarvestWidgetView(entry: entry).environment(\.widgetFamily, .accessoryInline).foregroundStyle(.white)
+                        HarvestWidgetView(entry: entry, forced: .accessoryInline).foregroundStyle(.white)
                     }
                 }
                 face(.systemMedium, 364, 170)
