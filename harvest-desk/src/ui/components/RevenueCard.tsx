@@ -22,7 +22,7 @@ export function RevenueCard({ values, baseValues, total, base, scale, days, subt
       <p className="hint">
         {cash
           ? "Sans ce que ta ferme produit et consomme elle-même : chaque ligne montre ce qui part vraiment au marché."
-          : "Net, après graines, nourriture et pioches, tout compté au prix du marché."}
+          : "Net, après graines, nourriture, pioches et gems, tout compté au prix du marché."}
         {" "}Moyenne réelle sur {days >= 1.5 ? `${Math.round(days)} jours` : "moins de 2 jours"}.
       </p>
       <div className="hero" style={{ marginTop: 18 }}>

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { dailyRates } from "../../core/engine";
+import { gemCost } from "../../core/gems";
 import { analyseSkills, pointsOf, shardsOf, tierProgress, type Plan, type SkillValue } from "../../core/skills";
 import type { AppState } from "../../shared/types";
 import { Icon } from "../icons";
@@ -51,11 +52,17 @@ export function SkillsView({ state }: { state: AppState }) {
   const unvalued = a.values.filter((v) => v.how === "none" && v.current > 0).length;
 
   const waitLoss = m(resetExtra) * (daysLeft / 30.4);
+  // Gems bought with FLOWER: pack price in $ minus 20 %, paid in FLOWER at today's rate.
+  const gem = gemCost(a.reset.gems, rate);
+  const gemText = `${a.reset.gems} gems (${fmt(gem.flower, 1)} FLOWER, ${usd(gem.usd)})`;
+  const payback = m(resetExtra) > 0 ? gem.usd / m(resetExtra) : Infinity;
   const verdict = freeReset
     ? `Ton reset gratuit est disponible : l'arbre idéal rapporte ${usd(m(resetExtra))} de plus par mois.`
-    : m(resetExtra) < 3
-      ? `Pas la peine de payer ${a.reset.gems} gems : le reset ne rapporte que ${usd(m(resetExtra))} de plus par mois. Attends le reset gratuit du ${freeDate}.`
-      : `Le reset rapporte ${usd(m(resetExtra))} de plus par mois. Attendre le reset gratuit du ${freeDate} (dans ${daysLeft} jours) te coûte environ ${usd(waitLoss)} : si ${a.reset.gems} gems valent moins que ça, paie le reset.`;
+    : m(resetExtra) <= 0.01
+      ? `Pas de reset à payer : l'arbre idéal ne rapporte rien de plus que ton arbre complété. Attends le reset gratuit du ${freeDate}.`
+      : gem.usd < waitLoss
+        ? `Paie le reset : ${gemText}, remboursés en ${payback < 1 ? `${Math.max(1, Math.round(payback * 30.4))} jours` : `${fmt(payback, 1)} mois`} par les ${usd(m(resetExtra))} de plus par mois. Attendre le reset gratuit du ${freeDate} te coûterait environ ${usd(waitLoss)}.`
+        : `Attends le reset gratuit du ${freeDate} : d'ici là, l'arbre idéal ne rapporterait que ${usd(waitLoss)} de plus, moins que les ${gemText} du reset.`;
 
   // Where the Ascension Shards went: each rank-up owned, by gain per shard.
   const shardRows = a.values.flatMap((v) => [...Array(Math.max(0, v.current - 1))].map((_, i) => ({ v, rank: i + 2, gain: m(v.value[i + 1] - v.value[i]) / v.def.tier })))
@@ -93,7 +100,7 @@ export function SkillsView({ state }: { state: AppState }) {
         <div className="kpi">
           <div className="l">Arbre idéal après un reset</div>
           <div className="v gold">+{usd(m(resetGain))}<small className="unit dim"> /mois</small></div>
-          <div className="d dim">{freeReset ? "reset gratuit disponible" : `reset gratuit le ${freeDate}, sinon ${a.reset.gems} gems`}</div>
+          <div className="d dim">{freeReset ? "reset gratuit disponible" : `reset gratuit le ${freeDate}, sinon ${a.reset.gems} gems ≈ ${usd(gemCost(a.reset.gems, rate).usd)}`}</div>
         </div>
       </div>
 
@@ -210,7 +217,7 @@ export function SkillsView({ state }: { state: AppState }) {
 
       <p className="foot">
         Points : un par niveau, ascensions comprises. Prix d'un rang en plus : 1, 3 ou 6 points et 1, 2 ou 3 éclats selon le palier du skill, et chaque rang demande le palier suivant ouvert dans l'arbre.
-        Un reset rend tous les points ; il est gratuit tous les 180 jours, sinon 200 gems, puis le double à chaque fois. Gains au rythme mesuré de ta ferme, coins comptés 320 pour 1 FLOWER.
+        Un reset rend tous les points ; il est gratuit tous les 180 jours, sinon 200 gems, puis le double à chaque fois. Gems comptés au prix du pack de 2 800 payé en FLOWER (−20 %), au cours du FLOWER du jour. Gains au rythme mesuré de ta ferme, coins comptés 320 pour 1 FLOWER.
       </p>
     </>
   );
