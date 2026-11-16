@@ -24,7 +24,7 @@ describe("ticketPlan", () => {
     expect(p.ticket).toBe("Duende Cap");
     // 34 base tickets without Tywin, +2 VIP and +3 Duende set (worn by a farm hand) for each of the 10 NPCs.
     expect(p.perDay).toBe(84);
-    expect(p.tywinPerDay).toBe(15);
+    expect(p.extras.find((x) => x.npc === "tywin")!.per).toBe(15);
     expect(p.doubles.known).toBe(4);
   });
   it("counts the weekly bounty board, its bonus and the chores", () => {
@@ -37,6 +37,17 @@ describe("ticketPlan", () => {
     expect(v.verdict).toBe("no");
     expect(v.missing).toBeGreaterThan(2000);
     expect(verdict(p, 1134, 9000).verdict).toBe("easy");
+  });
+  it("follows the deliveries you choose", () => {
+    const all = ticketPlan(farm, now, new Set())!;
+    expect(all.perDay).toBe(99);
+    expect(all.extras).toHaveLength(0);
+    // Without two NPCs, a goal that fits with all of them asks to add the cheaper one first.
+    const some = ticketPlan(farm, now, new Set(["tywin", "bert"]))!;
+    const goal = 1134 + verdict(some, 1134, 0).without + 100;
+    const v = verdict(some, 1134, goal, { tywin: 0.5, bert: 0.1 });
+    expect(v.verdict).toBe("add");
+    expect(v.toAdd).toEqual(["bert"]);
   });
 });
 
