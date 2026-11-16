@@ -85,10 +85,11 @@ function Banner({ state, onRetry, onImport }: { state: AppState; onRetry: () => 
 
 function Dashboard({ state }: { state: AppState }) {
   const farm = state.farm!, market = state.market!, snaps = state.snapshots;
-  const model = useMemo<Model>(() => buildModel(farm, snaps, market), [farm, snaps, market]);
+  const [cash, setCash] = usePersisted<boolean>("cashView", false);
+  const model = useMemo<Model>(() => buildModel(farm, snaps, market, cash), [farm, snaps, market, cash]);
   const [on, setOn] = usePersisted<Set<string>>("simulator", () => new Set<string>());
   const toggle = (id: string) => setOn((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const sc = useScenario(farm, snaps, market, model, on);
+  const sc = useScenario(farm, snaps, market, model, on, cash);
   const baseTotal = model.base.net * model.usd;
 
   return (
@@ -96,7 +97,7 @@ function Dashboard({ state }: { state: AppState }) {
       <Kpis total={sc.total} base={baseTotal} />
       <div className="grid">
         <RevenueCard values={sc.cat} baseValues={model.baseCat} total={sc.total} base={baseTotal}
-          scale={Math.max(model.ceiling, sc.total, 0.01)} days={model.days} subtitles={model.subtitles} />
+          scale={Math.max(model.ceiling, sc.total, 0.01)} days={model.days} subtitles={model.subtitles} cash={cash} setCash={setCash} />
         <Simulator results={model.results} on={on} toggle={toggle} rate={model.usd} />
       </div>
       <GrowthCurve base={baseTotal} total={sc.total} cost={sc.cost} />

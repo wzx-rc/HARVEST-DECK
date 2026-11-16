@@ -479,3 +479,15 @@ html.widget-mode #root{height:100%}
 .plist li{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;gap:12px;padding:8px 2px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
 .plist li:first-child{border-top:0}
 .plist b{color:var(--gold)}
+
+/* Revenue card: "Ce que tu encaisses" switch. */
+.rev-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.rev-head h2{margin:0}
+.mini-sw{display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid var(--line);border-radius:999px;padding:4px 10px 4px 5px;color:var(--dim);font:inherit;font-size:12.5px;cursor:pointer;transition:border-color .2s,color .2s}
+.mini-sw:hover{border-color:#5a4650;color:var(--text)}
+.mini-sw:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.mini-sw .sw{width:28px;height:16px}
+.mini-sw .sw::after{top:2px;left:2px;width:12px;height:12px}
+.mini-sw[aria-checked="true"]{border-color:var(--gold);color:var(--text)}
+.mini-sw[aria-checked="true"] .sw{background:var(--gold)}
+.mini-sw[aria-checked="true"] .sw::after{transform:translateX(12px);background:#2a1d10}

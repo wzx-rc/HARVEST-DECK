@@ -10,7 +10,8 @@
     "postinstall": "node scripts/ensure-electron.mjs",
     "start": "npm run build && node scripts/ensure-electron.mjs && electron .",
     "test": "vitest run",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "npm run build && electron-builder --win nsis",
+    "mobile:core": "vite build -c vite.mobile.config.mts"
   },
   "license": "UNLICENSED",
   "dependencies": {

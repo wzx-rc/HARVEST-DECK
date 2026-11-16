@@ -1,7 +1,7 @@
 name: Relevé Money Tree
 
 # Relit la ferme toutes les 10 minutes pour la page « Pops Money Tree » de Harvest Desk.
-# Les relevés vont dans le fichier reads.jsonl de la branche procs-data (un seul commit, remplacé à chaque fois).
+# Les relevés vont dans reads.jsonl (et les compteurs du jour dans snapshots.json, pour l'app iPhone) de la branche procs-data (un seul commit, remplacé à chaque fois).
 # À régler une fois : Settings > Secrets and variables > Actions > New repository secret, nom SFL_API_KEY.
 on:
   schedule:
@@ -44,6 +44,6 @@ jobs:
           cd data
           git config user.name "harvest-desk-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reads.jsonl
+          git add reads.jsonl snapshots.json
           if git rev-parse -q --verify HEAD >/dev/null; then git commit -q --amend -m "Relevés Money Tree"; else git commit -q -m "Relevés Money Tree"; fi
           git push -q -f origin procs-data
