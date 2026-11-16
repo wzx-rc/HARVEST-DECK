@@ -12,3 +12,18 @@ describe("gems bought with FLOWER", () => {
     expect(gemCost(200, 0.1285).usd).toBeCloseTo(1.485, 2);
   });
 });
+
+import { dailyRates } from "../src/core/engine";
+
+describe("gems in the daily rates", () => {
+  it("averages a counter from the first reading that has it", () => {
+    const D = 86_400_000;
+    const r = dailyRates([
+      { at: 0, farmActivity: { "Wheat Harvested": 0 } },
+      { at: 5 * D, farmActivity: { "Wheat Harvested": 500, "Instant Gems Spent": 2600 } },
+      { at: 10 * D, farmActivity: { "Wheat Harvested": 1000, "Instant Gems Spent": 2800 } },
+    ]);
+    expect(r.rates["Wheat Harvested"]).toBeCloseTo(100);
+    expect(r.rates["Instant Gems Spent"]).toBeCloseTo(40);
+  });
+});

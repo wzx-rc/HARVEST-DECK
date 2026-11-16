@@ -3,6 +3,7 @@ import {
   ANIMAL_DROPS, AOE_RANKS, FRUITS, AOE_YIELD, GREENHOUSE_FRUITS, OIL, cropTier, favouriteFood, isOvernight,
 } from "./gameData";
 import { Extra, Farm, FarmView, animalLevel, animals } from "./farm";
+import { gemCost } from "./gems";
 
 /** Daily action counts, keyed like the game's farmActivity ("Wheat Harvested", "Sheep Fed"…). */
 export type Rates = Record<string, number>;
@@ -156,6 +157,9 @@ export class Engine {
       const oil = hours * this.machineOilPerHour();
       lines.push(flows(line("machine-oil", "Huile de la Crop Machine", 0, oil * this.oilPrice()), undefined, scale(this.oilItems(), oil)));
     }
+    // Gems burnt to finish things at once (getInstantGems.ts → "Instant Gems Spent"), mostly wheat.
+    const gems = this.rate("Instant Gems Spent");
+    if (gems > 0) lines.push(line("gems", "Gems pour finir tout de suite", 0, gemCost(gems, this.market.flowerUsd).flower, gems));
     return sumCat("crops", lines.sort((a, b) => b.net - a.net));
   }
 
@@ -589,6 +593,9 @@ export class Engine {
   }
 }
 
+/** Counters added to the readings later on: older readings lack them. */
+const LATE_KEYS = new Set(["Instant Gems Spent"]);
+
 /** Daily rates from two or more farmActivity snapshots (oldest first). */
 export function dailyRates(snaps: { at: number; farmActivity: Record<string, number> }[]): { rates: Rates; days: number } {
   if (snaps.length < 2) return { rates: {}, days: 0 };
@@ -597,6 +604,14 @@ export function dailyRates(snaps: { at: number; farmActivity: Record<string, num
   if (days <= 0) return { rates: {}, days: 0 };
   const rates: Rates = {};
   for (const k of new Set([...Object.keys(a.farmActivity), ...Object.keys(b.farmActivity)])) {
+    if (LATE_KEYS.has(k) && a.farmActivity[k] === undefined) {
+      // Counter kept only in recent readings: average it from the first reading that has it.
+      const first = snaps.find((s) => s.farmActivity[k] !== undefined)!;
+      const span = (b.at - first.at) / 86_400_000;
+      const d = (b.farmActivity[k] ?? 0) - first.farmActivity[k];
+      if (span >= 0.5 && d > 0) rates[k] = d / span;
+      continue;
+    }
     const d = (b.farmActivity[k] ?? 0) - (a.farmActivity[k] ?? 0);
     if (d > 0) rates[k] = d / days;
   }

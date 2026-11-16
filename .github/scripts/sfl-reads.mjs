@@ -41,7 +41,7 @@ writeFileSync(file, [...kept, JSON.stringify(row)].join("\n") + "\n");
 const snapFile = file.replace(/[^/]*$/, "snapshots.json");
 const activity = {};
 for (const [k, v] of Object.entries(fa)) {
-  if (/(Mined|Crafted|Fed|Collected|Harvested|Planted|Seed Bought|Chopped|Fertilised|Drilled)$/.test(k)) activity[k] = v;
+  if (/(Mined|Crafted|Fed|Collected|Harvested|Planted|Seed Bought|Chopped|Fertilised|Drilled|Gems Spent)$/.test(k)) activity[k] = v;
 }
 let snaps = [];
 try { snaps = JSON.parse(readFileSync(snapFile, "utf8")); } catch { /* first run */ }
