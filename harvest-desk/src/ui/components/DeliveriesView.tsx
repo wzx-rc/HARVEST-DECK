@@ -84,7 +84,7 @@ export function DeliveriesView({ state }: { state: AppState }) {
         </section>
       </div>
 
-      <TicketGoal farm={farm} now={now} npcs={ticketNpcs} rate={rate} />
+      <TicketGoal farm={farm} now={now} npcs={ticketNpcs} rate={rate} off={off} />
 
       <section className="card stat" aria-labelledby="h-paid">
         <h2 id="h-paid">Livraisons payées</h2>

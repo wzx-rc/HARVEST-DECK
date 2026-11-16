@@ -16,7 +16,7 @@ const BOUNTY_BONUS = chapters.bountyBonus as number;
 const TRACK = chapters.track as Record<string, { free: number; premium: number }>;
 
 export interface Source {
-  id: "deliveries" | "tywin" | "bounties" | "chores" | "track";
+  id: "deliveries" | "extra" | "bounties" | "chores" | "track";
   label: string;
   /** Tickets still to earn before the chapter ends. */
   total: number;
@@ -30,9 +30,10 @@ export interface TicketPlan {
   seen: number;
   daysLeft: number;
   doubles: { known: number; estimated: number };
-  /** Tickets per day from deliveries, without Tywin, and Tywin alone. */
+  /** Tickets per day from the chosen deliveries. */
   perDay: number;
-  tywinPerDay: number;
+  /** The ticket deliveries left out, with what each would add before the end. */
+  extras: { npc: string; per: number; total: number }[];
   sources: Source[];
 }
 
@@ -45,7 +46,8 @@ function weekResets(now: number, end: number): number {
   return n;
 }
 
-export function ticketPlan(farm: Farm, now: number): TicketPlan | null {
+/** `off`: the NPCs whose ticket delivery you skip (Tywin by default). */
+export function ticketPlan(farm: Farm, now: number, off: Set<string> = new Set(["tywin"])): TicketPlan | null {
   const chapter = currentChapter(now);
   if (!chapter) return null;
   const ticket = TICKET_NAME[chapter.name];
@@ -67,8 +69,8 @@ export function ticketPlan(farm: Farm, now: number): TicketPlan | null {
     const dbl = doubleDays.filter((d) => !(d === today && doneToday(npc))).length + estimated;
     return { per: t, total: t * Math.max(0, n + dbl) };
   };
-  const others = TICKET_NPCS.filter((n) => n !== "tywin").map(deliveries);
-  const tywin = deliveries("tywin");
+  const others = TICKET_NPCS.filter((n) => !off.has(n)).map(deliveries);
+  const extras = TICKET_NPCS.filter((n) => off.has(n)).map((npc) => ({ npc, ...deliveries(npc) })).filter((x) => x.per > 0);
   const perDay = others.reduce((a, x) => a + x.per, 0);
 
   // Bounty board: what is left this week, then a full board and its bonus each Monday.
@@ -89,7 +91,7 @@ export function ticketPlan(farm: Farm, now: number): TicketPlan | null {
   const banner = Number(farm.inventory?.[`${chapter.name} Banner`] ?? 0) > 0 || Number(farm.inventory?.["Lifetime Farmer Banner"] ?? 0) > 0;
 
   const sources: Source[] = [
-    { id: "deliveries", label: "Livraisons à tickets, sans Tywin", total: others.reduce((a, x) => a + x.total, 0),
+    { id: "deliveries", label: extras.length ? "Livraisons choisies" : "Toutes les livraisons à tickets", total: others.reduce((a, x) => a + x.total, 0),
       detail: `${perDay} par jour × ${days} jours, plus ${doubleDays.length + estimated} jours de double livraison` },
     { id: "bounties", label: "Bounties et bonus de la semaine", total: boardLeft + bonusLeft + resets * (board + BOUNTY_BONUS),
       detail: `${board} par tableau + ${BOUNTY_BONUS} de bonus, ${resets} nouveaux tableaux d'ici la fin` },
@@ -97,22 +99,34 @@ export function ticketPlan(farm: Farm, now: number): TicketPlan | null {
       detail: `${choreWeek} par semaine` },
     { id: "track", label: banner ? "Track du chapitre (gratuit + Banner)" : "Track du chapitre (gratuit)",
       total: 0, detail: `jusqu'à ${track.free + (banner ? track.premium : 0)} sur tout le chapitre, déjà en partie pris : non compté` },
-    { id: "tywin", label: "Tywin", total: tywin.total, detail: `${tywin.per} par jour` },
+    { id: "extra", label: "Livraisons non cochées", total: extras.reduce((a, x) => a + x.total, 0),
+      detail: `${extras.reduce((a, x) => a + x.per, 0)} par jour si tu les ajoutes` },
   ];
 
   return {
     chapter, ticket, seen: farm.farmActivity?.[`${ticket} Collected`] ?? 0, daysLeft: (chapter.end - now) / DAY,
-    doubles: { known: doubleDays.length, estimated }, perDay, tywinPerDay: tywin.per, sources,
+    doubles: { known: doubleDays.length, estimated }, perDay, extras, sources,
   };
 }
 
-export type Verdict = "easy" | "tight" | "tywin" | "no";
+export type Verdict = "easy" | "tight" | "add" | "no";
 
-/** How a goal compares with what is left to earn, with and without Tywin. */
-export function verdict(plan: TicketPlan, owned: number, goal: number) {
+/**
+ * How a goal compares with what is left to earn with your chosen deliveries, and with all of them.
+ * When the choice falls short, `toAdd` lists the skipped deliveries to add, cheapest ticket first
+ * (`costPer`: FLOWER per ticket for each NPC).
+ */
+export function verdict(plan: TicketPlan, owned: number, goal: number, costPer: Record<string, number> = {}) {
   const need = Math.max(0, goal - owned);
-  const without = plan.sources.filter((s) => s.id !== "tywin").reduce((a, s) => a + s.total, 0);
-  const tywin = plan.sources.find((s) => s.id === "tywin")!.total;
-  const v: Verdict = without >= need * 1.1 ? "easy" : without >= need ? "tight" : without + tywin >= need ? "tywin" : "no";
-  return { need, without, withTywin: without + tywin, verdict: v, missing: Math.max(0, need - without) };
+  const without = plan.sources.filter((s) => s.id !== "extra").reduce((a, s) => a + s.total, 0);
+  const extra = plan.sources.find((s) => s.id === "extra")!.total;
+  const toAdd: string[] = [];
+  let sum = without;
+  for (const x of [...plan.extras].sort((a, b) => (costPer[a.npc] ?? Infinity) - (costPer[b.npc] ?? Infinity) || b.per - a.per)) {
+    if (sum >= need) break;
+    toAdd.push(x.npc);
+    sum += x.total;
+  }
+  const v: Verdict = without >= need * 1.1 ? "easy" : without >= need ? "tight" : without + extra >= need ? "add" : "no";
+  return { need, without, withAll: without + extra, verdict: v, missing: Math.max(0, need - without), toAdd: v === "add" ? toAdd : [] };
 }

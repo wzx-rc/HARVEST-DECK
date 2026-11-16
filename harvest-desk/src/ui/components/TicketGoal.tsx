@@ -3,32 +3,39 @@ import type { NpcSummary } from "../../core/deliveries";
 import type { Farm } from "../../core/farm";
 import { ticketPlan, verdict, type Source } from "../../core/tickets";
 import { Icon } from "../icons";
-import { nf, usd } from "../format";
+import { nf, npcName, usd } from "../format";
 
 const read = (k: string, d: number) => { try { const v = Number(localStorage.getItem(k)); return v > 0 ? v : d; } catch { return d; } };
 const write = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch { /* private window */ } };
 
-const COLOR: Record<Source["id"], string> = { deliveries: "var(--gold)", bounties: "var(--sheep)", chores: "var(--sky)", track: "var(--glass)", tywin: "var(--loss)" };
+const COLOR: Record<Source["id"], string> = { deliveries: "var(--gold)", bounties: "var(--sheep)", chores: "var(--sky)", track: "var(--glass)", extra: "var(--loss)" };
 
-/** Can the chapter goal (one or two 9000-ticket items) be reached before the end, and is Tywin needed? */
-export function TicketGoal({ farm, now, npcs, rate }: { farm: Farm; now: number; npcs: NpcSummary[]; rate: number }) {
-  const plan = useMemo(() => ticketPlan(farm, now), [farm, now]);
+/**
+ * Can the chapter goal (one or two 9000-ticket items) be reached before the end with the deliveries
+ * ticked above, and which of the others would it take?
+ */
+export function TicketGoal({ farm, now, npcs, rate, off }: { farm: Farm; now: number; npcs: NpcSummary[]; rate: number; off: Set<string> }) {
+  const plan = useMemo(() => ticketPlan(farm, now, off), [farm, now, off]);
   const key = plan ? `hd.tickets.${plan.chapter.name}` : "";
   const [owned, setOwned] = useState(() => (plan ? read(key + ".owned", plan.seen) : 0));
   const [goal, setGoal] = useState(() => (plan ? read(key + ".goal", 18000) : 18000));
   if (!plan) return null;
-  const v = verdict(plan, owned, goal);
+  const costPer = Object.fromEntries(npcs.filter((n) => n.tickets > 0).map((n) => [n.npc, n.cost / n.tickets]));
+  const v = verdict(plan, owned, goal, costPer);
   const costOf = (pick: (n: NpcSummary) => boolean) => npcs.filter(pick).reduce((a, n) => a + n.cost, 0) * plan.chapter.ticketDaysLeft;
-  const costOthers = costOf((n) => n.npc !== "tywin"), costTywin = costOf((n) => n.npc === "tywin");
+  const costChosen = costOf((n) => !off.has(n.npc)), costAdd = costOf((n) => v.toAdd.includes(n.npc));
+  const costRest = costOf((n) => off.has(n.npc));
+  const names = (l: string[]) => l.map(npcName).join(", ").replace(/, ([^,]*)$/, " et $1");
+  const skipped = plan.extras.length > 0;
   const shortDays = Math.ceil(v.missing / Math.max(1, plan.perDay));
   const tone = v.verdict === "easy" ? "pos" : v.verdict === "tight" ? "gold" : "neg";
   const title = {
-    easy: "Jouable sans Tywin",
-    tight: "Jouable sans Tywin, mais sans rater un jour",
-    tywin: "Pas sans Tywin",
-    no: "Chaud, même avec Tywin",
+    easy: skipped ? "Jouable avec ta sélection" : "Jouable",
+    tight: skipped ? "Jouable avec ta sélection, sans rater un jour" : "Jouable, sans rater un jour",
+    add: `Il faut ajouter ${names(v.toAdd)}`,
+    no: "Chaud, même avec toutes les livraisons",
   }[v.verdict];
-  const scale = Math.max(goal, owned + v.withTywin);
+  const scale = Math.max(goal, owned + v.withAll);
   const parts = [{ id: "owned", label: "Déjà à toi", total: owned, color: "var(--dim)" },
     ...plan.sources.filter((s) => s.total > 0).map((s) => ({ id: s.id, label: s.label, total: s.total, color: COLOR[s.id] }))];
 
@@ -46,7 +53,7 @@ export function TicketGoal({ farm, now, npcs, rate }: { farm: Farm; now: number;
         </div>
       </div>
       <p className="hint">
-        Ce que tu peux encore gagner d'ici la fin du chapitre ({nf(plan.daysLeft)} jours), en faisant chaque jour toutes les livraisons à tickets
+        Ce que tu peux encore gagner d'ici la fin du chapitre ({nf(plan.daysLeft)} jours), en faisant chaque jour les livraisons cochées au-dessus
         et chaque semaine tout le tableau de bounties et les chores.
       </p>
 
@@ -54,10 +61,12 @@ export function TicketGoal({ farm, now, npcs, rate }: { farm: Farm; now: number;
         <div>
           <div className={"big " + tone}>{title}</div>
           <p className="small">
-            Sans Tywin : <b>{nf(owned + v.without)}</b> sur {nf(goal)}
+            {skipped ? "Avec ta sélection" : "Avec toutes les livraisons"} : <b>{nf(owned + v.without)}</b> sur {nf(goal)}
             {v.missing > 0 ? <>, il manque <b className="neg">{nf(v.missing)}</b> (environ {shortDays} jours de livraisons de plus)</> : <>, marge de <b className="pos">{nf(owned + v.without - goal)}</b></>}.
-            <br />Avec Tywin : <b>{nf(owned + v.withTywin)}</b>
-            {owned + v.withTywin < goal ? <>, il manque encore <b className="neg">{nf(goal - owned - v.withTywin)}</b></> : null}.
+            {skipped ? <>
+              <br />Avec toutes les livraisons, {names(plan.extras.map((x) => x.npc))} compris : <b>{nf(owned + v.withAll)}</b>
+              {owned + v.withAll < goal ? <>, il manque encore <b className="neg">{nf(goal - owned - v.withAll)}</b></> : null}.
+            </> : null}
           </p>
         </div>
         <label className="field owned">
@@ -67,7 +76,7 @@ export function TicketGoal({ farm, now, npcs, rate }: { farm: Farm; now: number;
         </label>
       </div>
 
-      <div className="stack" role="img" aria-label={`${nf(owned + v.withTywin)} ${plan.ticket} possibles sur ${nf(goal)}`}>
+      <div className="stack" role="img" aria-label={`${nf(owned + v.withAll)} ${plan.ticket} possibles sur ${nf(goal)}`}>
         {parts.map((p) => <b key={p.id} style={{ width: `${(p.total / scale) * 100}%`, background: p.color }} title={`${p.label} : ${nf(p.total)}`} />)}
         <i style={{ left: `${(goal / scale) * 100}%` }} />
       </div>
@@ -86,7 +95,8 @@ export function TicketGoal({ farm, now, npcs, rate }: { farm: Farm; now: number;
       </ul>
 
       <p className="foot">
-        Coût des livraisons d'ici la fin, aux prix d'aujourd'hui : {usd(costOthers * rate)} sans Tywin, et {usd(costTywin * rate)} de plus pour Tywin.
+        Coût des livraisons d'ici la fin, aux prix d'aujourd'hui : {usd(costChosen * rate)} pour ta sélection
+        {v.toAdd.length ? `, et ${usd(costAdd * rate)} de plus pour ${names(v.toAdd)}` : skipped ? `, et ${usd(costRest * rate)} de plus pour toutes les autres` : ""}.
         {plan.doubles.estimated ? ` Doubles livraisons : ${plan.doubles.known} au calendrier, ${plan.doubles.estimated} supposées ensuite (une par semaine).` : ""}
         {" "}{plan.sources.find((s) => s.id === "track")!.label} : {plan.sources.find((s) => s.id === "track")!.detail}.
       </p>
