@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { dailyRates, type CategoryKey, type Market, type Report } from "../core/engine";
 import type { Farm } from "../core/farm";
 import { combined, evaluate, type OptionResult } from "../core/scenarios";
+import { internalize } from "../core/internal";
 import type { Snapshot } from "../shared/types";
 import { frCrop } from "./format";
 
@@ -30,12 +31,15 @@ export interface Model {
   plots: number;
 }
 
-export function buildModel(farm: Farm, snapshots: Snapshot[], market: Market): Model {
+/** `cash`: show what the farm sells, with what it makes and uses itself taken out of both sides. */
+export function buildModel(farm: Farm, snapshots: Snapshot[], market: Market, cash = false): Model {
   const { rates, days } = dailyRates(snapshots);
-  const { base, results } = evaluate(farm, rates, market);
+  const ev = evaluate(farm, rates, market);
+  const view = (r: Report) => (cash ? internalize(r, market.prices) : r);
+  const base = view(ev.base), results = ev.results;
   const usd = market.flowerUsd;
   const useful = results.filter((r) => r.gainTotal > 1e-6);
-  const all = useful.length ? combined(farm, rates, market, useful.map((r) => r.option)) : base;
+  const all = useful.length ? view(combined(farm, rates, market, useful.map((r) => r.option))) : base;
   const baseCat = Object.fromEntries(CATS.map((c) => [c.key, base.categories[c.key].net * usd])) as Record<CategoryKey, number>;
   const plots = Object.keys(farm.crops ?? {}).length;
   return { usd, days, base, results: useful, baseCat, ceiling: all.net * usd, subtitles: subtitles(farm, base, plots), plots };
@@ -65,14 +69,15 @@ function subtitles(farm: Farm, r: Report, plots: number): Record<CategoryKey, st
 }
 
 /** Per-category $ per day with the chosen options switched on. */
-export function useScenario(farm: Farm, snapshots: Snapshot[], market: Market, model: Model, on: Set<string>) {
+export function useScenario(farm: Farm, snapshots: Snapshot[], market: Market, model: Model, on: Set<string>, cash = false) {
   return useMemo(() => {
     const chosen = model.results.filter((r) => on.has(r.option.id));
     const report = chosen.length
       ? combined(farm, dailyRates(snapshots).rates, market, chosen.map((r) => r.option))
-      : model.base;
-    const cat = Object.fromEntries(CATS.map((c) => [c.key, report.categories[c.key].net * model.usd])) as Record<CategoryKey, number>;
+      : null;
+    const shown = report ? (cash ? internalize(report, market.prices) : report) : model.base;
+    const cat = Object.fromEntries(CATS.map((c) => [c.key, shown.categories[c.key].net * model.usd])) as Record<CategoryKey, number>;
     const cost = chosen.reduce((a, r) => a + r.cost, 0) * model.usd;
-    return { cat, total: report.net * model.usd, cost };
-  }, [farm, snapshots, market, model, on]);
+    return { cat, total: shown.net * model.usd, cost };
+  }, [farm, snapshots, market, model, on, cash]);
 }

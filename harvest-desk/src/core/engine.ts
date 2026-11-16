@@ -24,12 +24,21 @@ export interface Market {
 
 export interface TokenQuote { floor?: number; sale?: number; offer?: number }
 
-export interface Line { key: string; label: string; qty?: number; gross: number; cost: number; net: number }
+export interface Line {
+  key: string; label: string; qty?: number; gross: number; cost: number; net: number;
+  /** Items this line yields per day, valued in `gross` at their market price. */
+  made?: Record<string, number>;
+  /** Items this line consumes per day, valued in `cost` at their market price. */
+  uses?: Record<string, number>;
+}
 export type CategoryKey = "crops" | "animals" | "greenhouse" | "minerals" | "wood" | "fruits" | "honey";
 export interface Category { key: CategoryKey; gross: number; cost: number; net: number; lines: Line[] }
 export interface Report { categories: Record<CategoryKey, Category>; net: number; gross: number; cost: number }
 
 const line = (key: string, label: string, gross: number, cost: number, qty?: number): Line => ({ key, label, qty, gross, cost, net: gross - cost });
+const flows = (l: Line, made?: Record<string, number>, uses?: Record<string, number>): Line => ({ ...l, ...(made ? { made } : {}), ...(uses ? { uses } : {}) });
+const scale = (items: Record<string, number>, k: number) => Object.fromEntries(Object.entries(items).map(([i, q]) => [i, q * k]));
+const addTo = (into: Record<string, number>, items: Record<string, number>) => { for (const [i, q] of Object.entries(items)) into[i] = (into[i] ?? 0) + q; return into; };
 const sumCat = (key: CategoryKey, lines: Line[]): Category => ({
   key, lines,
   gross: lines.reduce((a, l) => a + l.gross, 0),
@@ -131,11 +140,11 @@ export class Engine {
       const machine = harvested - plots;
       if (plots > 0) {
         const qty = plots * this.cropYield(crop);
-        lines.push(line(crop, crop, qty * this.price(crop), plots * this.seedCost(crop), qty));
+        lines.push(flows(line(crop, crop, qty * this.price(crop), plots * this.seedCost(crop), qty), { [crop]: qty }));
       }
       if (machine > 0) {
         const qty = machine * this.cropYield(crop, false);
-        lines.push(line(`machine:${crop}`, `${crop} (Crop Machine)`, qty * this.price(crop), machine * this.seedCost(crop), qty));
+        lines.push(flows(line(`machine:${crop}`, `${crop} (Crop Machine)`, qty * this.price(crop), machine * this.seedCost(crop), qty), { [crop]: qty }));
       }
       machineSeeds += machine;
       machineCropHours += Math.max(0, machine) * (CROPS[crop].seconds / 3600);
@@ -144,7 +153,8 @@ export class Engine {
     // at the pace its current queue shows (grow time spread over its plots, speed skills included).
     if (machineSeeds > 0) {
       const hours = Math.min(24, machineCropHours * this.machinePace());
-      lines.push(line("machine-oil", "Huile de la Crop Machine", 0, hours * this.machineOilPerHour() * this.oilPrice()));
+      const oil = hours * this.machineOilPerHour();
+      lines.push(flows(line("machine-oil", "Huile de la Crop Machine", 0, oil * this.oilPrice()), undefined, scale(this.oilItems(), oil)));
     }
     return sumCat("crops", lines.sort((a, b) => b.net - a.net));
   }
@@ -188,15 +198,25 @@ export class Engine {
 
   /** FLOWER per oil: an Oil Drill (coins, Wood, Iron, Wool or Leather) divided by the oil it brings up. */
   oilPrice(): number {
-    const f = this.f;
-    const rig = Math.min(f.skill("Oil Rig"), 3);
+    const items = this.oilItems();
+    return this.coins(OIL.drillCoins) / this.oilPerDrill() + Object.entries(items).reduce((a, [k, n]) => a + n * this.price(k), 0);
+  }
+
+  /** Drill ingredients per oil. */
+  oilItems(): Record<string, number> {
+    const rig = Math.min(this.f.skill("Oil Rig"), 3);
     const items: Record<string, number> = { ...OIL.drill, ...(rig ? { Wool: OIL.drillWool[rig - 1] } : { Leather: 10 }) };
-    const drill = this.coins(OIL.drillCoins) + Object.entries(items).reduce((a, [k, n]) => a + n * this.price(k), 0);
+    return scale(items, 1 / this.oilPerDrill());
+  }
+
+  /** Oil per drill. */
+  oilPerDrill(): number {
+    const f = this.f;
     const ext = Math.min(f.skill("Oil Extraction"), 3);
     const drop = OIL.drop + (ext ? OIL.extraction[ext - 1] : 0)
       + (f.wears("Oil Can") ? 2 : 0) + (f.wears("Oil Overalls") ? 10 : 0) + (f.wears("Oil Gallon") ? 5 : 0)
       + (f.has("Ladybug Cow") ? 1 : 0) + (f.has("Knight Chicken") ? 0.1 : 0) + (f.has("Battle Fish") ? 0.05 : 0);
-    return drill / drop;
+    return drop;
   }
 
   /** Oil per greenhouse plant (plantGreenhouse.ts → getOilUsage). */
@@ -244,8 +264,8 @@ export class Engine {
       // Seedy Business makes greenhouse seeds cheaper; Seeded Bounty takes one more seed per pot.
       const seedy = this.f.skill("Seedy Business");
       const seeds = (this.f.skill("Seeded Bounty") ? 2 : 1) * (seedy ? [0.85, 0.8, 0.75][Math.min(seedy, 3) - 1] : 1);
-      const oil = n * this.greenhouseOil(crop) * this.oilPrice();
-      lines.push(line(crop, crop, qty * this.price(crop), n * seeds * this.seedCost(crop) + oil, qty));
+      const oilQty = n * this.greenhouseOil(crop);
+      lines.push(flows(line(crop, crop, qty * this.price(crop), n * seeds * this.seedCost(crop) + oilQty * this.oilPrice(), qty), { [crop]: qty }, scale(this.oilItems(), oilQty)));
     }
     return sumCat("greenhouse", lines);
   }
@@ -264,7 +284,7 @@ export class Engine {
     if (!measured) return sumCat("honey", []);
     // The measured honey already carries today's boosts: scale it by the change in multiplier and hive speed.
     const qty = (measured * this.honeyFactors(this.f)) / this.honeyFactors(this.real);
-    return sumCat("honey", [line("Honey", "Miel", qty * this.price("Honey"), 0, qty)]);
+    return sumCat("honey", [flows(line("Honey", "Miel", qty * this.price("Honey"), 0, qty), { Honey: qty })]);
   }
 
   // ---------- Fruit patches (fruitHarvested.ts → getFruitYield, seedBought.ts, fruitTreeRemoved.ts) ----------
@@ -306,7 +326,8 @@ export class Engine {
       const qty = n * this.fruitYield(fruit);
       const planted = this.rate(`${d.seed} Planted`) || this.rate(`${d.seed} Bought`);
       const seeds = (this.rate(`${d.seed} Bought`) || planted) * this.coins(d.price * seedMul);
-      lines.push(line(fruit, fruit, qty * this.price(fruit) + planted * woodPerRemoval * this.price("Wood"), seeds, qty));
+      const wood = planted * woodPerRemoval;
+      lines.push(flows(line(fruit, fruit, qty * this.price(fruit) + wood * this.price("Wood"), seeds, qty), { [fruit]: qty, ...(wood > 0 ? { Wood: wood } : {}) }));
     }
     return sumCat("fruits", lines);
   }
@@ -353,7 +374,7 @@ export class Engine {
       // Money Tree: a 1 / 2 / 3 % chance of 200 coins × the tree multiplier.
       const coins = money ? chops * ([1, 2, 3][money - 1] / 100) * this.coins(200 * k.mult) : 0;
       const label = name === "Tree" ? "Arbres" : name === "Ancient Tree" ? "Arbres anciens" : name === "Sacred Tree" ? "Arbre sacré" : name;
-      lines.push(line(name, label, qty * this.price("Wood") + coins, chops * k.mult * axe, qty));
+      lines.push(flows(line(name, label, qty * this.price("Wood") + coins, chops * k.mult * axe, qty), { Wood: qty }));
     }
     return sumCat("wood", lines);
   }
@@ -435,6 +456,13 @@ export class Engine {
     return crafted * unit;
   }
 
+  /** Ingredients of the tools crafted per day. */
+  toolUses(tool: string): Record<string, number> {
+    let crafted = this.rate(`${tool} Crafted`);
+    if (tool === "Pickaxe" && this.f.has("Quarry")) crafted = 0;
+    return scale(TOOLS[tool].items, crafted);
+  }
+
   minerals(): Category {
     const stoneTypes = this.nodeTypes(this.f.raw.stones, "Stone Rock");
     const ironTypes = this.nodeTypes(this.f.raw.iron, "Iron Rock");
@@ -447,10 +475,10 @@ export class Engine {
     const gold = qty(goldTypes, this.goldYield());
     const crim = this.rate("Crimstone Mined") * this.crimstoneYield();
     return sumCat("minerals", [
-      line("Gold", "Or", gold * this.price("Gold"), this.toolCost("Iron Pickaxe"), gold),
-      line("Iron", "Fer", iron * this.price("Iron"), this.toolCost("Stone Pickaxe"), iron),
-      line("Crimstone", "Crimstone", crim * this.price("Crimstone"), this.toolCost("Gold Pickaxe"), crim),
-      line("Stone", "Pierre", stone * this.price("Stone"), this.toolCost("Pickaxe"), stone),
+      flows(line("Gold", "Or", gold * this.price("Gold"), this.toolCost("Iron Pickaxe"), gold), { Gold: gold }, this.toolUses("Iron Pickaxe")),
+      flows(line("Iron", "Fer", iron * this.price("Iron"), this.toolCost("Stone Pickaxe"), iron), { Iron: iron }, this.toolUses("Stone Pickaxe")),
+      flows(line("Crimstone", "Crimstone", crim * this.price("Crimstone"), this.toolCost("Gold Pickaxe"), crim), { Crimstone: crim }, this.toolUses("Gold Pickaxe")),
+      flows(line("Stone", "Pierre", stone * this.price("Stone"), this.toolCost("Pickaxe"), stone), { Stone: stone }, this.toolUses("Pickaxe")),
     ]);
   }
 
@@ -522,14 +550,21 @@ export class Engine {
     // feedAnimal.ts: a placed golden animal makes every feeding of its kind free.
     const free = this.f.has(FREE_FEED[type] ?? "");
     let value = 0, food = 0;
+    const made: Record<string, number> = {}, uses: Record<string, number> = {};
+    const per = fed / herd.length;
     for (const a of herd) {
       const lvl = animalLevel(type, a.experience);
       for (const [res, table] of Object.entries(drops)) {
-        value += (table[lvl] * (a.multiplier ?? 1) + this.produceBonus(res)) * this.price(res);
+        const q = table[lvl] * (a.multiplier ?? 1) + this.produceBonus(res);
+        value += q * this.price(res);
+        made[res] = (made[res] ?? 0) + q * per;
       }
-      food += type === "Pig" || free ? 0 : this.foodQty(type) * this.feedPrice(favouriteFood(lvl));
+      if (type === "Pig" || free) continue;
+      const feed = favouriteFood(lvl);
+      food += this.foodQty(type) * this.feedPrice(feed);
+      addTo(uses, scale(FEED_RECIPES[feed] ?? {}, this.foodQty(type) * per));
     }
-    return line(type, label, (fed * value) / herd.length, (fed * food) / herd.length);
+    return flows(line(type, label, value * per, food * per), made, Object.keys(uses).length ? uses : undefined);
   }
 
   animals(): Category {
