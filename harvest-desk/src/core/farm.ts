@@ -3,6 +3,8 @@ import { ANIMAL_LEVELS, FACTION_ITEMS, ISLAND_ORDER, SKILL_RANKS, SPLIT_SKILLS }
 /** The parts of the game state Harvest Desk reads. Everything is optional: the API can drop fields. */
 export interface Placed { coordinates?: { x: number; y: number }; readyAt?: number }
 export interface Farm {
+  /** Farm id, added by the app to the API response (Money Tree draws depend on it). */
+  id?: number;
   inventory?: Record<string, string | number>;
   collectibles?: Record<string, Placed[]>;
   home?: { collectibles?: Record<string, Placed[]> };

@@ -150,7 +150,7 @@ async function refreshNow(full: boolean): Promise<AppState> {
         writeJson("market.json", market);
       }
       return publish({
-        status: "ready", farm: res.farm, farmId: Number(res.id), username: res.farm.username,
+        status: "ready", farm: { ...res.farm, id: Number(res.id) }, farmId: Number(res.id), username: res.farm.username,
         fetchedAt: new Date().toISOString(), market, ...record(Date.now(), res.farm, market),
       });
     } catch (e) {

@@ -1,4 +1,7 @@
 import { useMemo } from "react";
+import { dailyRates } from "../../core/engine";
+import { forecast, MT_WINDOW, type KindForecast } from "../../core/moneyTree";
+import { usePersisted } from "../usePersisted";
 import { procStats, TREE_FR, treeMults, type ProcEvent } from "../../core/procs";
 import { COINS_PER_FLOWER } from "../../core/gameData";
 import type { AppState } from "../../shared/types";
@@ -15,8 +18,9 @@ export function ProcsView({ state }: { state: AppState }) {
   const s = useMemo(() => (log && farm ? procStats(log, rank, treeMults(farm)) : null), [log, farm, rank]);
   const toUsd = (coins: number) => (coins / COINS_PER_FLOWER) * rate;
 
+  const draws = farm && state.farmId ? <Draws state={state} rank={rank} /> : null;
   if (!log || !s) {
-    return (
+    return draws ?? (
       <section className="card">
         <h2>Pops Money Tree</h2>
         <p className="hint">Le suivi démarre à la prochaine lecture de ta ferme. L'app note chaque pop qu'elle voit, toutes les 10 minutes.</p>
@@ -35,6 +39,7 @@ export function ProcsView({ state }: { state: AppState }) {
 
   return (
     <>
+      {draws}
       <div className="kpis">
         <div className="kpi">
           <div className="l">Pops relevés</div>
@@ -111,5 +116,77 @@ export function ProcsView({ state }: { state: AppState }) {
         Coins comptés au taux de la banque (320 pour 1 FLOWER).
       </p>
     </>
+  );
+}
+
+const KIND_FR: Record<string, string> = { "Basic Tree": "Arbre", "Ancient Tree": "Arbre ancien", "Sacred Tree": "Arbre sacré" };
+
+/**
+ * The game's Money Tree draws are fixed: from the chop counters, the real pops of the last 30 days
+ * and the next ones are known. Two switches show the same chops at rank 2 or 3.
+ */
+function Draws({ state, rank }: { state: AppState; rank: number }) {
+  const farm = state.farm as any;
+  const [alt, setAlt] = usePersisted<number>("procs.rank", 0);
+  const shown = alt || rank;
+  const rates = useMemo(() => dailyRates(state.snapshots).rates, [state.snapshots]);
+  const mults = useMemo(() => treeMults(farm), [farm]);
+  const f = useMemo(() => forecast(state.farmId!, farm.farmActivity ?? {}, rates, mults, shown), [state.farmId, farm, rates, mults, shown]);
+  const base = useMemo(() => (alt && alt !== rank ? forecast(state.farmId!, farm.farmActivity ?? {}, rates, mults, rank) : null), [alt, rank, state.farmId, farm, rates, mults]);
+  const rate = state.market?.flowerUsd ?? 0;
+  const sum = (l: KindForecast[], g: (k: KindForecast) => number) => l.reduce((a, k) => a + g(k), 0);
+  const day = (coins: number, days: number) => coins / days / COINS_PER_FLOWER;
+  const past = sum(f, (k) => k.past.coins), pastExp = sum(f, (k) => k.past.expected);
+  const month = sum(f, (k) => k.month.coins), week = sum(f, (k) => k.week.coins);
+  const vsBase = base ? (month - sum(base, (k) => k.month.coins)) / COINS_PER_FLOWER * rate : 0;
+  const noChops = sum(f, (k) => k.perDay) === 0;
+
+  return (
+    <section className="card" aria-labelledby="h-draw">
+      <div className="rev-head">
+        <h2 id="h-draw">Les tirages du jeu {alt ? <small className="dim">si rang {alt}</small> : <small className="dim">rang {rank || 0}</small>}</h2>
+        <div className="seg" role="group" aria-label="Voir un autre rang">
+          {[2, 3].map((r) => (
+            <button key={r} className="mini-sw" role="switch" aria-checked={alt === r} onClick={() => setAlt(alt === r ? 0 : r)} disabled={r === rank}>
+              <span className="sw" aria-hidden="true" />Si rang {r}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="hint">
+        Money Tree n'est pas du hasard : chaque coupe tire un nombre fixe, qui dépend de ta ferme, du type d'arbre et du nombre d'arbres de ce type déjà coupés.
+        L'app recalcule donc tes vrais pops passés et prévoit les prochains, à ton rythme de coupe mesuré.
+      </p>
+      {noChops ? <p className="hint">Pas encore assez de relevés pour connaître ton rythme de coupe.</p> : (
+        <>
+          <div className="kpis">
+            <div className="kpi">
+              <div className="l">{MT_WINDOW} derniers jours</div>
+              <div className="v">{nf(day(past, MT_WINDOW))} F<small className="unit dim"> /jour</small></div>
+              <div className="d dim">{sum(f, (k) => k.past.pops)} pops, {nf(past)} coins. Moyenne théorique : {nf(day(pastExp, MT_WINDOW))} F/jour</div>
+            </div>
+            <div className="kpi">
+              <div className="l">7 prochains jours</div>
+              <div className="v">{nf(day(week, 7))} F<small className="unit dim"> /jour</small></div>
+              <div className="d dim">{sum(f, (k) => k.week.pops)} pops, {nf(week)} coins</div>
+            </div>
+            <div className="kpi">
+              <div className="l">30 prochains jours</div>
+              <div className="v gold">{usd((month / COINS_PER_FLOWER) * rate)}<small className="unit dim"> /mois</small></div>
+              <div className="d dim">{sum(f, (k) => k.month.pops)} pops, {nf(month)} coins ({nf(month / COINS_PER_FLOWER)} F){base ? `, soit ${vsBase >= 0 ? "+" : ""}${usd(vsBase)} par rapport à ton rang ${rank}` : ""}</div>
+            </div>
+          </div>
+          <div className="ptree">
+            {f.map((k) => (
+              <div key={k.kind} className="pt-row">
+                <span className="lb"><Icon name="wood" size={18} />{KIND_FR[k.kind]} <small className="dim">×{k.mult}</small></span>
+                <span>{k.nextIn !== null ? <>prochain pop dans <b>{k.nextIn}</b> coupes{k.nextDays !== null ? <small className="dim"> (≈ {k.nextDays < 1 ? `${Math.max(1, Math.round(k.nextDays * 24))} h` : `${fmt(k.nextDays, 1)} j`})</small> : null}</> : "—"}</span>
+                <b>{k.month.pops} pops / 30 j</b>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
