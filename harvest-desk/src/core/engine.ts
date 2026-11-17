@@ -4,6 +4,7 @@ import {
 } from "./gameData";
 import { Extra, Farm, FarmView, animalLevel, animals } from "./farm";
 import { gemCost } from "./gems";
+import { realCoinsPerDay } from "./moneyTree";
 
 /** Daily action counts, keyed like the game's farmActivity ("Wheat Harvested", "Sheep Fed"…). */
 export type Rates = Record<string, number>;
@@ -375,8 +376,14 @@ export class Engine {
       const chops = this.rate(`${name === "Tree" ? "Basic Tree" : name} Chopped`);
       if (!chops) continue;
       const qty = chops * this.woodYield(k.mult, k.tier);
-      // Money Tree: a 1 / 2 / 3 % chance of 200 coins × the tree multiplier.
-      const coins = money ? chops * ([1, 2, 3][money - 1] / 100) * this.coins(200 * k.mult) : 0;
+      // Money Tree: 200 coins × the tree multiplier on 1 / 2 / 3 % of chops. The game's draws are fixed,
+      // so with the farm id the real pops of the last 30 days of chops are counted (moneyTree.ts).
+      const kind = name === "Tree" ? "Basic Tree" : name;
+      const id = Number((f.raw as { id?: number }).id ?? 0);
+      const counter = Number(f.raw.farmActivity?.[`${kind} Chopped`] ?? 0);
+      const coins = !money ? 0 : id && counter
+        ? this.coins(realCoinsPerDay(id, kind, counter, chops, k.mult, money))
+        : chops * ([1, 2, 3][money - 1] / 100) * this.coins(200 * k.mult);
       const label = name === "Tree" ? "Arbres" : name === "Ancient Tree" ? "Arbres anciens" : name === "Sacred Tree" ? "Arbre sacré" : name;
       lines.push(flows(line(name, label, qty * this.price("Wood") + coins, chops * k.mult * axe, qty), { Wood: qty }));
     }
