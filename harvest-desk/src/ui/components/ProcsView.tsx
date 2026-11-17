@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { dailyRates } from "../../core/engine";
-import { forecast, MT_WINDOW, type KindForecast } from "../../core/moneyTree";
+import { dailyPops, forecast, MT_WINDOW, type KindForecast } from "../../core/moneyTree";
 import { usePersisted } from "../usePersisted";
 import { procStats, TREE_FR, treeMults, type ProcEvent } from "../../core/procs";
 import { COINS_PER_FLOWER } from "../../core/gameData";
@@ -18,6 +18,9 @@ export function ProcsView({ state }: { state: AppState }) {
   const s = useMemo(() => (log && farm ? procStats(log, rank, treeMults(farm)) : null), [log, farm, rank]);
   const toUsd = (coins: number) => (coins / COINS_PER_FLOWER) * rate;
 
+  // With the farm id, the days come from the game's draws replayed on the counter readings: exact,
+  // whatever the gaps between readings. Without it, from the pops seen between close readings.
+  const replay = useMemo(() => (farm && state.farmId ? dailyPops(state.farmId, state.snapshots, treeMults(farm), rank) : null), [farm, state.farmId, state.snapshots, rank]);
   const draws = farm && state.farmId ? <Draws state={state} rank={rank} /> : null;
   if (!log || !s) {
     return draws ?? (
@@ -34,13 +37,13 @@ export function ProcsView({ state }: { state: AppState }) {
   const expectedPerDay = s.chops && s.chopsPerDay ? (s.expectedCoins / s.chops) * s.chopsPerDay : s.expectedCoins / days;
   const luck = s.expectedPops ? s.pops / s.expectedPops : 0;
   const last = [...log.events].filter((e) => e.boost === SKILL).reverse();
-  const shownDays = s.perDay.slice(-14);
+  const shownDays = (replay ?? s.perDay).slice(-14);
   const maxBar = Math.max(...shownDays.map((d) => Math.max(d.coins, d.expectedCoins)), 1);
 
   return (
     <>
       {draws}
-      <div className="kpis">
+      {replay ? null : <div className="kpis">
         <div className="kpi">
           <div className="l">Pops relevés</div>
           <div className="v gold">{s.pops}</div>
@@ -59,12 +62,12 @@ export function ProcsView({ state }: { state: AppState }) {
           <div className={"v" + (luck >= 1 ? " gold" : "")}>{s.expectedPops >= 0.5 ? `${Math.round(luck * 100)} %` : "—"}</div>
           <div className="d dim">{s.pops} pops pour {fmt(s.expectedPops, 1)} attendus sur tes {nf(s.chops)} coupes suivies. 100 % = pile la moyenne{s.expectedPops < 10 ? ". Encore trop peu de pops pour conclure : attends une dizaine de pops attendus" : ""}</div>
         </div>
-      </div>
+      </div>}
 
-      <div className="grid">
+      <div className={replay ? "" : "grid"}>
         <section className="card" aria-labelledby="h-pd">
           <h2 id="h-pd">Coins par jour</h2>
-          <p className="hint">Barre : ce que Money Tree t'a donné. Trait : ce qu'il aurait dû donner en moyenne avec tes coupes du jour.</p>
+          <p className="hint">Barre : ce que Money Tree t'a donné{replay ? ", recalculé avec les tirages du jeu" : ""}. Trait : ce qu'il aurait dû donner en moyenne avec tes coupes du jour.</p>
           <div className="pchart" role="img" aria-label="Coins Money Tree par jour, réel et attendu">
             {shownDays.map((d) => (
               <div className="pcol" key={d.day} title={`${dayLabel(d.day)} : ${d.pops} pop${d.pops > 1 ? "s" : ""}, ${nf(d.coins)} coins (attendu ${nf(d.expectedCoins)})`}>
@@ -79,7 +82,7 @@ export function ProcsView({ state }: { state: AppState }) {
           </div>
         </section>
 
-        <section className="card" aria-labelledby="h-pt">
+        {replay ? null : <section className="card" aria-labelledby="h-pt">
           <h2 id="h-pt">Par arbre</h2>
           <p className="hint">Un pop vaut 200 coins × le multiplicateur de l'arbre coupé.</p>
           <div className="ptree">
@@ -92,7 +95,7 @@ export function ProcsView({ state }: { state: AppState }) {
             ))}
             {s.unknown ? <p className="hint">{s.unknown} pop{s.unknown > 1 ? "s" : ""} sur un arbre déjà recoupé avant la lecture : compté au gain moyen d'un pop.</p> : null}
           </div>
-        </section>
+        </section>}
       </div>
 
       <section className="card" aria-labelledby="h-pl">
@@ -110,11 +113,14 @@ export function ProcsView({ state }: { state: AppState }) {
         ) : <p className="hint">Aucun pop pour l'instant.</p>}
       </section>
 
-      <p className="foot">
+      {replay ? <p className="foot">
+        Les pops sont recalculés avec le tirage du jeu (chop.ts, prng.ts) sur tes compteurs de coupes : ils ne dépendent ni de l'heure des relevés ni de l'app ouverte.
+        « Derniers pops » liste ceux que l'app a vus passer. Coins comptés au taux de la banque (320 pour 1 FLOWER).
+      </p> : <p className="foot">
         Le jeu ne garde que l'heure du dernier pop. L'app la relit toutes les 10 minutes quand elle est ouverte : deux pops dans les mêmes 10 minutes comptent pour un.
         Quand l'app est fermée, les pops peuvent passer inaperçus : ces heures-là ne comptent ni pour les pops ni pour les coupes. Le gain par jour applique tes coins par coupe à toutes tes coupes de la journée.
         Coins comptés au taux de la banque (320 pour 1 FLOWER).
-      </p>
+      </p>}
     </>
   );
 }

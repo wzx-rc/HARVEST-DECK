@@ -82,3 +82,28 @@ export function realCoinsPerDay(farmId: number, kind: string, counter: number, p
   const n = popsBetween(farmId, k.itemId, counter - Math.round(perDay * MT_WINDOW), counter, rank).length;
   return (n * MT_COINS * mult) / MT_WINDOW;
 }
+
+export interface MtDay { day: number; pops: number; coins: number; expectedCoins: number; chops: number }
+
+/**
+ * Pops per day replayed from the counter readings: each pair of readings owns the chops between
+ * them, counted on the day of the later one. `mults`: multiplier of each tree kind.
+ */
+export function dailyPops(farmId: number, snaps: { at: number; farmActivity: Record<string, number> }[], mults: Record<string, number>, rank: number): MtDay[] {
+  const days = new Map<number, MtDay>();
+  const dayOf = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  for (let i = 1; i < snaps.length; i++) {
+    const a = snaps[i - 1].farmActivity, b = snaps[i].farmActivity, d = dayOf(snaps[i].at);
+    const row = days.get(d) ?? { day: d, pops: 0, coins: 0, expectedCoins: 0, chops: 0 };
+    for (const { kind, itemId } of MT_KINDS) {
+      const k = `${kind} Chopped`;
+      if (a[k] === undefined || b[k] === undefined || b[k] <= a[k]) continue;
+      const each = MT_COINS * (mults[kind] ?? 1);
+      const n = popsBetween(farmId, itemId, a[k], b[k], rank).length;
+      row.pops += n; row.coins += n * each; row.chops += b[k] - a[k];
+      row.expectedCoins += (b[k] - a[k]) * (rank / 100) * each;
+    }
+    days.set(d, row);
+  }
+  return [...days.values()].sort((x, y) => x.day - y.day);
+}
