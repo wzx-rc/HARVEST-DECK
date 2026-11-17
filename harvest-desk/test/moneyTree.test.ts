@@ -27,3 +27,17 @@ describe("Money Tree draws", () => {
     expect(coins(forecast(FARM, act, rates, mults, 3))).toBeGreaterThan(coins(r1));
   });
 });
+
+import { dailyPops } from "../src/core/moneyTree";
+
+describe("pops per day from the readings", () => {
+  it("finds the 17 November pop between two readings far apart", () => {
+    const d = dailyPops(FARM, [
+      { at: Date.parse("2026-11-17T11:13:00Z"), farmActivity: { "Basic Tree Chopped": 47935, "Ancient Tree Chopped": 13866, "Sacred Tree Chopped": 4154 } },
+      { at: Date.parse("2026-11-17T19:55:00Z"), farmActivity: { "Basic Tree Chopped": 47971, "Ancient Tree Chopped": 13888, "Sacred Tree Chopped": 4163 } },
+    ], { "Basic Tree": 1, "Ancient Tree": 4, "Sacred Tree": 16 }, 1);
+    expect(d).toHaveLength(1);
+    expect(d[0].pops).toBe(1);
+    expect(d[0].coins).toBe(200);
+  });
+});
