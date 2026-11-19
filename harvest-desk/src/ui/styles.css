@@ -491,3 +491,15 @@ html.widget-mode #root{height:100%}
 .mini-sw[aria-checked="true"]{border-color:var(--gold);color:var(--text)}
 .mini-sw[aria-checked="true"] .sw{background:var(--gold)}
 .mini-sw[aria-checked="true"] .sw::after{transform:translateX(12px);background:#2a1d10}
+
+/* Ticket goal tiles: Duende Hat, Hat + Monument, two 9 000 items. */
+.goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}
+.goal-tile{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;gap:6px 12px;align-items:center;text-align:left;background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);font:inherit;cursor:pointer;transition:border-color .2s,background .2s}
+.goal-tile:hover{border-color:#5a4650}
+.goal-tile:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.goal-tile[aria-pressed="true"]{border-color:var(--gold);background:#3a2b23}
+.goal-tile .pics{display:flex;gap:4px;grid-row:1 / span 2;align-items:center}
+.goal-tile .t b{display:block;font-weight:600}
+.goal-tile .t span{color:var(--dim);font-size:12.5px}
+.goal-tile .badge{grid-column:2;justify-self:start;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.06)}
+.goal-tile .badge.pos{color:var(--sheep)}.goal-tile .badge.gold{color:var(--gold)}.goal-tile .badge.neg{color:var(--loss)}

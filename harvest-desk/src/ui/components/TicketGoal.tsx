@@ -3,15 +3,23 @@ import type { NpcSummary } from "../../core/deliveries";
 import type { Farm } from "../../core/farm";
 import { ticketPlan, verdict, type Source } from "../../core/tickets";
 import { Icon } from "../icons";
+import { ItemImage } from "../ItemImage";
 import { nf, npcName, usd } from "../format";
 
 const read = (k: string, d: number) => { try { const v = Number(localStorage.getItem(k)); return v > 0 ? v : d; } catch { return d; } };
 const write = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch { /* private window */ } };
 
+/** Chapter shop goals, priced in tickets (Duende Hat 9 000, Duende Monument 4 000). */
+const GOALS = [
+  { total: 9000, title: "Duende Hat", detail: "×0,9 pousse des parcelles et des fruits", items: [{ name: "Duende Hat", fallback: "wheat" }] },
+  { total: 13000, title: "Duende Hat + Duende Monument", detail: "+ ×0,9 ressources et temps des agrandissements", items: [{ name: "Duende Hat", fallback: "wheat" }, { name: "Duende Monument", fallback: "ticket" }] },
+  { total: 18000, title: "2 objets à 9 000", detail: "Duende Hat et un autre objet à 9 000", items: [{ name: "Duende Hat", fallback: "wheat" }, { name: "", fallback: "ticket" }] },
+];
+
 const COLOR: Record<Source["id"], string> = { deliveries: "var(--gold)", bounties: "var(--sheep)", chores: "var(--sky)", track: "var(--glass)", extra: "var(--loss)" };
 
 /**
- * Can the chapter goal (one or two 9000-ticket items) be reached before the end with the deliveries
+ * Can the chapter goal (Duende Hat, Hat + Monument, or two 9000-ticket items) be reached before the end with the deliveries
  * ticked above, and which of the others would it take?
  */
 export function TicketGoal({ farm, now, npcs, rate, off }: { farm: Farm; now: number; npcs: NpcSummary[]; rate: number; off: Set<string> }) {
@@ -44,13 +52,21 @@ export function TicketGoal({ farm, now, npcs, rate, off }: { farm: Farm; now: nu
       <div className="top2">
         <h2 id="h-goal"><Icon name="ticket" size={18} /> Objectif {plan.ticket}</h2>
         <span className="spacer" />
-        <div className="seg" role="group" aria-label="Objectif">
-          {[9000, 18000].map((g) => (
-            <button key={g} className="btn" aria-pressed={goal === g} onClick={() => { setGoal(g); write(key + ".goal", g); }}>
-              {g === 9000 ? "1 objet à 9 000" : "2 objets à 9 000"}
+      </div>
+      <div className="goals" role="group" aria-label="Objectif">
+        {GOALS.map((g) => {
+          const gv = verdict(plan, owned, g.total, costPer);
+          const ok = gv.verdict === "easy" || gv.verdict === "tight";
+          return (
+            <button key={g.total} className="goal-tile" aria-pressed={goal === g.total} onClick={() => { setGoal(g.total); write(key + ".goal", g.total); }}>
+              <span className="pics">{g.items.map((it, i) => <ItemImage key={i} name={it.name} fallback={it.fallback} size={34} />)}</span>
+              <span className="t"><b>{g.title}</b><span>{nf(g.total)} {plan.ticket} · {g.detail}</span></span>
+              <span className={"badge " + (ok ? "pos" : gv.verdict === "add" ? "gold" : "neg")}>
+                {ok ? (skipped ? "possible avec ta sélection" : "possible") : gv.verdict === "add" ? `avec ${names(gv.toAdd)}` : "hors de portée"}
+              </span>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
       <p className="hint">
         Ce que tu peux encore gagner d'ici la fin du chapitre ({nf(plan.daysLeft)} jours), en faisant chaque jour les livraisons cochées au-dessus
