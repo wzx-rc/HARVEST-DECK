@@ -505,3 +505,4 @@ html.widget-mode #root{height:100%}
 .goal-tile .t span{color:var(--dim);font-size:12.5px}
 .goal-tile .badge{grid-column:2;justify-self:start;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.06)}
 .goal-tile .badge.pos{color:var(--sheep)}.goal-tile .badge.gold{color:var(--gold)}.goal-tile .badge.neg{color:var(--loss)}
+.kpi .v small.usd{font-size:.62em;font-weight:600;letter-spacing:-.01em;opacity:.8;white-space:nowrap}

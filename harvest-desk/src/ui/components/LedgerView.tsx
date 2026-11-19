@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { flowerOf, gains, type EntryKind, type LedgerEntry } from "../../core/ledger";
 import type { AppState, ManualEntry } from "../../shared/types";
 import { Icon } from "../icons";
-import { dayLabel, fmt, nf, usd } from "../format";
+import { dayLabel, fmt, nf } from "../format";
 import { usePersisted } from "../usePersisted";
 
 const DAY = 86_400_000;
@@ -24,7 +24,7 @@ const KIND: Record<EntryKind, { label: string; icon: string; color: string }> = 
 
 const money = (v: number) => (v < 0 ? "−" : "+") + (Math.abs(v) >= 100 ? nf(Math.abs(v)) : fmt(Math.abs(v))) + " $";
 
-const fl = (v: number) => (Math.abs(v) >= 100 ? nf(v) : fmt(v)) + " FL";
+const fl = (v: number) => (Math.abs(v) >= 100 ? nf(v) : fmt(v)) + "\u00a0FL";
 const sfl = (v: number) => (v < 0 ? "−" : "+") + fl(Math.abs(v));
 
 /** "Gains": FLOWER the farm made and spent over the period, NFT trades counted or not, and what left the game. */
@@ -37,7 +37,7 @@ export function LedgerView({ state, onAdd, onRemove }: { state: AppState; onAdd:
   const list = useMemo(() => state.ledger.filter((e) => now - e.at <= days * DAY), [state.ledger, now, days]);
   const g = gains(list, withNft, rate);
   const first = state.ledger.length ? Math.min(...state.ledger.map((e) => e.at)) : now;
-  const nftNote = (v: number, verb: string) => v > 0 ? (withNft ? `dont ${fl(v)} ${verb} de NFT` : `hors ${verb} de NFT (${fl(v)} non comptés)`) : (verb === "ventes" ? "aucune vente de NFT" : "aucun achat de NFT");
+  const nftNote = (v: number, verb: string) => v > 0 ? (withNft ? `Dont ${fl(v)} ${verb} de NFT` : `Hors ${verb} de NFT (${fl(v)} non comptés)`) : (verb === "ventes" ? "Aucune vente de NFT" : "Aucun achat de NFT");
 
   return (
     <>
@@ -54,10 +54,10 @@ export function LedgerView({ state, onAdd, onRemove }: { state: AppState; onAdd:
       </div>
 
       <div className="kpis four">
-        <div className="kpi"><div className="l">Généré</div><div className="v pos">{sfl(g.made)}</div><div className="d dim">{usd(g.made * rate)} · {nftNote(g.nftSold, "ventes")}</div></div>
-        <div className="kpi"><div className="l">Dépensé</div><div className="v neg">{sfl(-g.spent)}</div><div className="d dim">{usd(g.spent * rate)} · {nftNote(g.nftBought, "achats")}</div></div>
-        <div className="kpi"><div className="l">Gain</div><div className={"v " + (g.gain >= 0 ? "gold" : "neg")}>{sfl(g.gain)}</div><div className="d dim">{usd(g.gain * rate)} · généré moins dépensé</div></div>
-        <div className="kpi"><div className="l">Sortie du jeu</div><div className="v" style={{ color: "var(--sky)" }}>{sfl(g.out)}</div><div className="d dim">{usd(g.out * rate)} · retiré vers ton portefeuille</div></div>
+        <div className="kpi"><div className="l">Généré</div><div className="v pos">{sfl(g.made)}<Usd v={g.made * rate} /></div><div className="d dim">{nftNote(g.nftSold, "ventes")}</div></div>
+        <div className="kpi"><div className="l">Dépensé</div><div className="v neg">{sfl(-g.spent)}<Usd v={-g.spent * rate} /></div><div className="d dim">{nftNote(g.nftBought, "achats")}</div></div>
+        <div className="kpi"><div className="l">Gain</div><div className={"v " + (g.gain >= 0 ? "gold" : "neg")}>{sfl(g.gain)}<Usd v={g.gain * rate} /></div><div className="d dim">Généré moins dépensé</div></div>
+        <div className="kpi"><div className="l">Sortie du jeu</div><div className="v" style={{ color: "var(--sky)" }}>{sfl(g.out)}<Usd v={g.out * rate} /></div><div className="d dim">Retiré vers ton portefeuille</div></div>
       </div>
 
       <FlowChart entries={list} now={now} rate={rate} withNft={withNft} days={days === Infinity ? Math.max(7, Math.ceil((now - first) / DAY) + 1) : days} />
@@ -76,6 +76,9 @@ export function LedgerView({ state, onAdd, onRemove }: { state: AppState; onAdd:
     </>
   );
 }
+
+/** Dollar value beside a FLOWER amount, a bit smaller. */
+const Usd = ({ v }: { v: number }) => <>{" "}<small className="usd">{"/\u00a0" + money(v)}</small></>;
 
 function Move({ e, rate, muted, onRemove }: { e: LedgerEntry; rate: number; muted: boolean; onRemove?: () => void }) {
   const k = KIND[e.kind];
