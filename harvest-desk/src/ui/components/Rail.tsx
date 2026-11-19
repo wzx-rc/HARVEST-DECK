@@ -10,7 +10,7 @@ export const VIEWS: { v: View; label: string; icon: string }[] = [
   { v: "market", label: "Marketplace", icon: "market" },
   { v: "deliveries", label: "Livraisons", icon: "delivery" },
   { v: "skills", label: "Skills", icon: "skills" },
-  { v: "ledger", label: "Entrées et sorties", icon: "ledger" },
+  { v: "ledger", label: "Gains", icon: "ledger" },
 ];
 
 export const viewLabel = (v: View) => (v === "settings" ? "Réglages" : VIEWS.find((m) => m.v === v)?.label ?? "");

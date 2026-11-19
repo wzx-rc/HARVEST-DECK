@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../src/demo/fixture.json";
-import { diffMeta, ledgerFromMetas, thinMetas, type FarmMeta } from "../src/core/ledger";
+import { diffMeta, gains, ledgerFromMetas, thinMetas, type FarmMeta, type LedgerEntry } from "../src/core/ledger";
 
 const meta = (p: Partial<FarmMeta>): FarmMeta => ({
   at: 0, usd: 0.1, balance: 100, withdrawn: 0, soldCount: 0, items: {}, flowerOrders: {}, delivered: {}, ...p,
@@ -42,5 +42,26 @@ describe("thinMetas", () => {
     const h = 3_600_000;
     const t = thinMetas([meta({ at: 10 }), meta({ at: 20 }), meta({ at: h + 5 })], 2 * h);
     expect(t.map((m) => m.at)).toEqual([20, h + 5]);
+  });
+});
+
+describe("gains", () => {
+  const e = (kind: LedgerEntry["kind"], flower: number, nft?: boolean): LedgerEntry => ({ id: kind + flower, at: 0, kind, flower, usd: flower * 0.1, label: "", nft });
+  const list = [e("withdraw", -50), e("delivery", 3), e("income", 10), e("spend", -4), e("purchase", -100, true), e("sale", 40, true), e("sale", 6),
+    { id: "m", at: 0, kind: "manual" as const, usd: -1, label: "" }];
+  it("leaves NFT trades and withdrawals out by default", () => {
+    const g = gains(list, false, 0.1);
+    expect([g.made, g.spent, g.gain, g.out, g.nftSold, g.nftBought]).toEqual([19, 14, 5, 50, 40, 100]);
+  });
+  it("counts NFT trades when asked", () => {
+    const g = gains(list, true, 0.1);
+    expect([g.made, g.spent, g.gain]).toEqual([59, 114, -55]);
+  });
+});
+
+describe("diffMeta NFT flag", () => {
+  it("flags a purchase that brought an NFT, not plain spending", () => {
+    expect(diffMeta(meta({}), meta({ at: 1, balance: 80, items: { "Farm Dog": 1 } }))[0].nft).toBe(true);
+    expect(diffMeta(meta({}), meta({ at: 1, balance: 80 }))[0].nft).toBeUndefined();
   });
 });

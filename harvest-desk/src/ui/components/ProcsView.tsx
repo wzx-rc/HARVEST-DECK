@@ -168,18 +168,18 @@ function Draws({ state, rank }: { state: AppState; rank: number }) {
           <div className="kpis">
             <div className="kpi">
               <div className="l">{MT_WINDOW} derniers jours</div>
-              <div className="v">{nf(day(past, MT_WINDOW))} F<small className="unit dim"> /jour</small></div>
-              <div className="d dim">{sum(f, (k) => k.past.pops)} pops, {nf(past)} coins. Moyenne théorique : {nf(day(pastExp, MT_WINDOW))} F/jour</div>
+              <div className="v">{nf(day(past, MT_WINDOW))} FL<small className="unit dim"> /jour</small></div>
+              <div className="d dim">{sum(f, (k) => k.past.pops)} pops, {nf(past)} coins. Moyenne théorique : {nf(day(pastExp, MT_WINDOW))} FL/jour</div>
             </div>
             <div className="kpi">
               <div className="l">7 prochains jours</div>
-              <div className="v">{nf(day(week, 7))} F<small className="unit dim"> /jour</small></div>
+              <div className="v">{nf(day(week, 7))} FL<small className="unit dim"> /jour</small></div>
               <div className="d dim">{sum(f, (k) => k.week.pops)} pops, {nf(week)} coins</div>
             </div>
             <div className="kpi">
               <div className="l">30 prochains jours</div>
               <div className="v gold">{usd((month / COINS_PER_FLOWER) * rate)}<small className="unit dim"> /mois</small></div>
-              <div className="d dim">{sum(f, (k) => k.month.pops)} pops, {nf(month)} coins ({nf(month / COINS_PER_FLOWER)} F){base ? `, soit ${vsBase >= 0 ? "+" : ""}${usd(vsBase)} par rapport à ton rang ${rank}` : ""}</div>
+              <div className="d dim">{sum(f, (k) => k.month.pops)} pops, {nf(month)} coins ({nf(month / COINS_PER_FLOWER)} FL){base ? `, soit ${vsBase >= 0 ? "+" : ""}${usd(vsBase)} par rapport à ton rang ${rank}` : ""}</div>
             </div>
           </div>
           <div className="ptree">

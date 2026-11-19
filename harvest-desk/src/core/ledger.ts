@@ -27,6 +27,8 @@ export interface LedgerEntry {
   usd: number;
   label: string;
   detail?: string;
+  /** Purchase or sale of an NFT or wearable (one of the tracked items came or went). */
+  nft?: boolean;
 }
 
 const NFT_MIN = 20, WEARABLE_MIN = 5;
@@ -55,9 +57,9 @@ const names = (m: Record<string, number>) => Object.entries(m).map(([k, n]) => (
 export function diffMeta(a: FarmMeta, b: FarmMeta): LedgerEntry[] {
   const out: LedgerEntry[] = [];
   const usd = b.usd;
-  const push = (kind: EntryKind, flower: number, label: string, detail?: string) => {
+  const push = (kind: EntryKind, flower: number, label: string, detail?: string, nft?: boolean) => {
     if (Math.abs(flower) < 0.01) return;
-    out.push({ id: `${b.at}-${kind}`, at: b.at, kind, flower, usd: flower * usd, label, detail });
+    out.push({ id: `${b.at}-${kind}`, at: b.at, kind, flower, usd: flower * usd, label, detail, ...(nft ? { nft } : {}) });
   };
   const withdrawn = b.withdrawn - a.withdrawn;
   push("withdraw", -withdrawn, "Retrait vers le portefeuille");
@@ -75,8 +77,8 @@ export function diffMeta(a: FarmMeta, b: FarmMeta): LedgerEntry[] {
     if (d > 0) gained[k] = d; else if (d < 0) lost[k] = -d;
   }
   const rest = b.balance - a.balance + withdrawn - delivered;
-  if (rest < 0) push(Object.keys(gained).length ? "purchase" : "spend", rest, Object.keys(gained).length ? "Achats" : "Dépenses en jeu", names(gained) || undefined);
-  else push(b.soldCount > a.soldCount || Object.keys(lost).length ? "sale" : "income", rest, b.soldCount > a.soldCount || Object.keys(lost).length ? "Ventes" : "Autres gains", names(lost) || undefined);
+  if (rest < 0) push(Object.keys(gained).length ? "purchase" : "spend", rest, Object.keys(gained).length ? "Achats" : "Dépenses en jeu", names(gained) || undefined, Object.keys(gained).length > 0);
+  else push(b.soldCount > a.soldCount || Object.keys(lost).length ? "sale" : "income", rest, b.soldCount > a.soldCount || Object.keys(lost).length ? "Ventes" : "Autres gains", names(lost) || undefined, Object.keys(lost).length > 0);
   return out;
 }
 
@@ -98,4 +100,34 @@ export function thinMetas(metas: FarmMeta[], now: number): FarmMeta[] {
     else keep.push(m);
   }
   return keep;
+}
+
+export interface Gains {
+  /** FLOWER earned in the game: deliveries, sales, other gains (NFT sales only when asked). */
+  made: number;
+  /** FLOWER spent in the game (NFT purchases only when asked). */
+  spent: number;
+  /** made − spent. */
+  gain: number;
+  /** FLOWER taken out of the game to the wallet. */
+  out: number;
+  /** NFT sales and purchases, counted or not. */
+  nftSold: number;
+  nftBought: number;
+}
+
+/** FLOWER of an entry; one typed in dollars is converted at `rate` ($ per FLOWER). */
+export const flowerOf = (e: LedgerEntry, rate: number) => e.flower ?? (rate > 0 ? e.usd / rate : 0);
+
+/** "Gains" view: what the farm made and spent, with or without NFT trades. Withdrawals stay apart. */
+export function gains(entries: LedgerEntry[], withNft: boolean, rate: number): Gains {
+  const g: Gains = { made: 0, spent: 0, gain: 0, out: 0, nftSold: 0, nftBought: 0 };
+  for (const e of entries) {
+    const f = flowerOf(e, rate);
+    if (e.kind === "withdraw") { g.out += -f; continue; }
+    if (e.nft) { if (f > 0) g.nftSold += f; else g.nftBought += -f; if (!withNft) continue; }
+    if (f > 0) g.made += f; else g.spent += -f;
+  }
+  g.gain = g.made - g.spent;
+  return g;
 }
