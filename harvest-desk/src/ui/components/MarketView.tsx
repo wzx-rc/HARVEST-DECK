@@ -94,7 +94,7 @@ function BuyRow({ d, rank, rate }: { d: Deal; rank: number; rate: number }) {
       </span>
       <span className="g">
         <b className="pos">+{usd(d.perDay * MONTH * rate)}<small>/mois</small></b>
-        <span>{usd(d.price * rate)} · {nf(d.price)} F</span>
+        <span>{usd(d.price * rate)} · {nf(d.price)} FL</span>
       </span>
       <span />
     </li>

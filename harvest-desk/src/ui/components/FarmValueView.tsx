@@ -99,9 +99,9 @@ function GroupCard({ g, rate }: { g: ValueGroup; rate: number }) {
             <span className="chip" style={{ color: LOOK[g.key].color }}><Icon name={LOOK[g.key].icon} size={18} /></span>
             <span className="t">
               <b>{i.name}</b>
-              <span>{i.qty !== 1 ? `${qty(i.qty)} × ` : ""}{i.unit < 100 ? fmt(i.unit, i.unit < 1 ? 3 : 2) : nf(i.unit)} F · {SOURCE[i.source]}</span>
+              <span>{i.qty !== 1 ? `${qty(i.qty)} × ` : ""}{i.unit < 100 ? fmt(i.unit, i.unit < 1 ? 3 : 2) : nf(i.unit)} FL · {SOURCE[i.source]}</span>
             </span>
-            <span className="g"><b className="gold">{usd(i.value * rate)}</b><span>{qty(i.value)} F</span></span>
+            <span className="g"><b className="gold">{usd(i.value * rate)}</b><span>{qty(i.value)} FL</span></span>
           </li>
         ))}
       </ul>

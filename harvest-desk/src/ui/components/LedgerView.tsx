@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import type { EntryKind, LedgerEntry } from "../../core/ledger";
+import { flowerOf, gains, type EntryKind, type LedgerEntry } from "../../core/ledger";
 import type { AppState, ManualEntry } from "../../shared/types";
 import { Icon } from "../icons";
-import { dayLabel, fmt, nf } from "../format";
+import { dayLabel, fmt, nf, usd } from "../format";
 import { usePersisted } from "../usePersisted";
 
 const DAY = 86_400_000;
@@ -13,7 +13,7 @@ const PERIODS = [
 ] as const;
 
 const KIND: Record<EntryKind, { label: string; icon: string; color: string }> = {
-  withdraw: { label: "Retrait", icon: "out", color: "var(--sky)" },
+  withdraw: { label: "Sortie du jeu", icon: "out", color: "var(--sky)" },
   delivery: { label: "Livraisons", icon: "delivery", color: "var(--sheep)" },
   purchase: { label: "Achat", icon: "bag", color: "var(--loss)" },
   sale: { label: "Vente", icon: "coins", color: "var(--sheep)" },
@@ -24,16 +24,20 @@ const KIND: Record<EntryKind, { label: string; icon: string; color: string }> = 
 
 const money = (v: number) => (v < 0 ? "−" : "+") + (Math.abs(v) >= 100 ? nf(Math.abs(v)) : fmt(Math.abs(v))) + " $";
 
-/** FLOWER coming in and going out, in dollars, found between farm readings or typed by hand. */
+const fl = (v: number) => (Math.abs(v) >= 100 ? nf(v) : fmt(v)) + " FL";
+const sfl = (v: number) => (v < 0 ? "−" : "+") + fl(Math.abs(v));
+
+/** "Gains": FLOWER the farm made and spent over the period, NFT trades counted or not, and what left the game. */
 export function LedgerView({ state, onAdd, onRemove }: { state: AppState; onAdd: (e: ManualEntry) => void; onRemove: (id: string) => void }) {
   const [period, setPeriod] = usePersisted<(typeof PERIODS)[number]["k"]>("ledger.period", "30");
+  const [withNft, setWithNft] = usePersisted<boolean>("ledger.withNft", false);
   const now = state.fetchedAt ? Date.parse(state.fetchedAt) : Date.now();
+  const rate = state.market?.flowerUsd ?? 0;
   const days = PERIODS.find((p) => p.k === period)!.days;
   const list = useMemo(() => state.ledger.filter((e) => now - e.at <= days * DAY), [state.ledger, now, days]);
-  const inflow = list.filter((e) => e.usd > 0).reduce((a, e) => a + e.usd, 0);
-  const outflow = list.filter((e) => e.usd < 0).reduce((a, e) => a + e.usd, 0);
-  const net = inflow + outflow;
+  const g = gains(list, withNft, rate);
   const first = state.ledger.length ? Math.min(...state.ledger.map((e) => e.at)) : now;
+  const nftNote = (v: number, verb: string) => v > 0 ? (withNft ? `dont ${fl(v)} ${verb} de NFT` : `hors ${verb} de NFT (${fl(v)} non comptés)`) : (verb === "ventes" ? "aucune vente de NFT" : "aucun achat de NFT");
 
   return (
     <>
@@ -43,24 +47,28 @@ export function LedgerView({ state, onAdd, onRemove }: { state: AppState; onAdd:
             <button key={p.k} className="btn" aria-pressed={period === p.k} onClick={() => setPeriod(p.k)}>{p.label}</button>
           ))}
         </div>
-        <span className="dim small">Suivi depuis le {new Date(first).toLocaleDateString("fr-FR")}. Les nouveaux mouvements s'ajoutent à chaque actualisation.</span>
+        <button className="mini-sw" role="switch" aria-checked={withNft} onClick={() => setWithNft(!withNft)}>
+          <span className="sw" aria-hidden="true" />Avec achats et ventes de NFT
+        </button>
+        <span className="dim small">Suivi depuis le {new Date(first).toLocaleDateString("fr-FR")}.</span>
       </div>
 
-      <div className="kpis">
-        <div className="kpi"><div className="l">Entrées</div><div className="v pos">{money(inflow)}</div><div className="d dim">ventes, livraisons, saisies</div></div>
-        <div className="kpi"><div className="l">Sorties</div><div className="v neg">{money(outflow)}</div><div className="d dim">achats, dépenses, retraits</div></div>
-        <div className="kpi"><div className="l">Solde de la période</div><div className={"v " + (net >= 0 ? "gold" : "neg")}>{money(net)}</div><div className="d dim">{list.length} mouvement{list.length > 1 ? "s" : ""}</div></div>
+      <div className="kpis four">
+        <div className="kpi"><div className="l">Généré</div><div className="v pos">{sfl(g.made)}</div><div className="d dim">{usd(g.made * rate)} · {nftNote(g.nftSold, "ventes")}</div></div>
+        <div className="kpi"><div className="l">Dépensé</div><div className="v neg">{sfl(-g.spent)}</div><div className="d dim">{usd(g.spent * rate)} · {nftNote(g.nftBought, "achats")}</div></div>
+        <div className="kpi"><div className="l">Gain</div><div className={"v " + (g.gain >= 0 ? "gold" : "neg")}>{sfl(g.gain)}</div><div className="d dim">{usd(g.gain * rate)} · généré moins dépensé</div></div>
+        <div className="kpi"><div className="l">Sortie du jeu</div><div className="v" style={{ color: "var(--sky)" }}>{sfl(g.out)}</div><div className="d dim">{usd(g.out * rate)} · retiré vers ton portefeuille</div></div>
       </div>
 
-      <FlowChart entries={list} now={now} days={days === Infinity ? Math.max(7, Math.ceil((now - first) / DAY) + 1) : days} />
+      <FlowChart entries={list} now={now} rate={rate} withNft={withNft} days={days === Infinity ? Math.max(7, Math.ceil((now - first) / DAY) + 1) : days} />
 
       <div className="grid">
         <section className="card" aria-labelledby="h-list">
           <h2 id="h-list">Mouvements</h2>
-          <p className="hint">Le plus récent en haut. Chaque montant est converti au cours du FLOWER du moment.</p>
+          <p className="hint">Le plus récent en haut, en FLOWER et en dollars au cours du moment.{withNft ? "" : " Les achats et ventes de NFT sont listés mais pas comptés."}</p>
           <ul className="moves">
             {list.length === 0 ? <li className="empty">Aucun mouvement sur cette période.</li> : null}
-            {list.map((e) => <Move key={e.id} e={e} onRemove={e.kind === "manual" ? () => onRemove(e.id) : undefined} />)}
+            {list.map((e) => <Move key={e.id} e={e} rate={rate} muted={!withNft && !!e.nft} onRemove={e.kind === "manual" ? () => onRemove(e.id) : undefined} />)}
           </ul>
         </section>
         <AddEntry onAdd={onAdd} />
@@ -69,18 +77,19 @@ export function LedgerView({ state, onAdd, onRemove }: { state: AppState; onAdd:
   );
 }
 
-function Move({ e, onRemove }: { e: LedgerEntry; onRemove?: () => void }) {
+function Move({ e, rate, muted, onRemove }: { e: LedgerEntry; rate: number; muted: boolean; onRemove?: () => void }) {
   const k = KIND[e.kind];
+  const f = flowerOf(e, rate), out = e.kind === "withdraw";
   return (
-    <li className="move">
+    <li className="move" style={muted ? { opacity: 0.55 } : undefined} title={muted ? "Achat ou vente de NFT, pas compté" : undefined}>
       <span className="chip" style={{ color: k.color }}><Icon name={k.icon} size={18} /></span>
       <span className="t">
         <b>{e.label}</b>
         <span title={e.detail}>{dayLabel(e.at)} · {e.detail ?? k.label}</span>
       </span>
       <span className="g">
-        <b className={e.usd < 0 ? "neg" : "pos"}>{money(e.usd)}</b>
-        <span>{e.flower !== undefined ? `${e.flower < 0 ? "−" : "+"}${fmt(Math.abs(e.flower), Math.abs(e.flower) < 10 ? 2 : 0)} F` : "saisi en $"}</span>
+        <b className={out ? "" : f < 0 ? "neg" : "pos"} style={out ? { color: "var(--sky)" } : undefined}>{sfl(out ? -f : f)}</b>
+        <span>{e.flower !== undefined ? money(out ? -e.usd : e.usd) : `saisi en $ : ${money(e.usd)}`}</span>
       </span>
       {onRemove ? <button className="iconbtn sm" aria-label={`Supprimer ${e.label}`} title="Supprimer" onClick={onRemove}><Icon name="close" size={14} /></button> : <span />}
     </li>
@@ -124,44 +133,49 @@ function AddEntry({ onAdd }: { onAdd: (e: ManualEntry) => void }) {
   );
 }
 
-/** Daily bars: money in above the line, money out below. Weekly bars past 60 days. */
-function FlowChart({ entries, now, days }: { entries: LedgerEntry[]; now: number; days: number }) {
-  const W = 760, H = 200, L = 56, R = 12, T = 12, B = 26;
+/** Daily bars in FLOWER: made above the line, spent below, and what left the game in blue. Weekly bars past 60 days. */
+function FlowChart({ entries, now, days, rate, withNft }: { entries: LedgerEntry[]; now: number; days: number; rate: number; withNft: boolean }) {
+  const W = 760, H = 200, L = 64, R = 12, T = 12, B = 26;
   const step = days > 60 ? 7 : 1;
   const n = Math.ceil(days / step);
   const start = new Date(now - (n * step - 1) * DAY); start.setHours(0, 0, 0, 0);
-  const bins = [...Array(n)].map((_, i) => ({ t: start.getTime() + i * step * DAY, inn: 0, out: 0 }));
+  const bins = [...Array(n)].map((_, i) => ({ t: start.getTime() + i * step * DAY, entries: [] as LedgerEntry[] }));
   for (const e of entries) {
     const i = Math.floor((e.at - start.getTime()) / (step * DAY));
-    if (i < 0 || i >= n) continue;
-    if (e.usd > 0) bins[i].inn += e.usd; else bins[i].out += e.usd;
+    if (i >= 0 && i < n) bins[i].entries.push(e);
   }
-  const hi = Math.max(1, ...bins.map((b) => b.inn)), lo = Math.min(-1, ...bins.map((b) => b.out));
+  const sums = bins.map((b) => ({ t: b.t, ...gains(b.entries, withNft, rate) }));
+  const hi = Math.max(1, ...sums.map((b) => Math.max(b.made, b.out))), lo = Math.min(-1, ...sums.map((b) => -b.spent));
   const span = hi - lo;
   const y = (v: number) => T + ((hi - v) / span) * (H - T - B);
   const bw = (W - L - R) / n;
   const labelEvery = Math.ceil(n / 10);
   return (
     <section className="card" aria-labelledby="h-flow">
-      <h2 id="h-flow">Entrées et sorties {step === 7 ? "par semaine" : "par jour"}</h2>
-      <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Barres des entrées et sorties">
+      <h2 id="h-flow">Gains {step === 7 ? "par semaine" : "par jour"}</h2>
+      <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Barres du FLOWER généré, dépensé et sorti du jeu">
         {[hi, 0, lo].map((v) => (
           <g key={v}>
             <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke={v === 0 ? "var(--dim)" : "var(--line)"} />
-            <text x={L - 8} y={y(v) + 3} textAnchor="end">{money(v).replace("+0,00 $", "0 $")}</text>
+            <text x={L - 8} y={y(v) + 3} textAnchor="end">{v === 0 ? "0 FL" : sfl(v)}</text>
           </g>
         ))}
-        {bins.map((b, i) => (
-          <g key={b.t}>
-            {b.inn > 0 ? <rect x={L + i * bw + bw * 0.18} width={bw * 0.64} y={y(b.inn)} height={y(0) - y(b.inn)} rx="2" fill="var(--sheep)"><title>{`${dayLabel(b.t)} : ${money(b.inn)}`}</title></rect> : null}
-            {b.out < 0 ? <rect x={L + i * bw + bw * 0.18} width={bw * 0.64} y={y(0)} height={y(b.out) - y(0)} rx="2" fill="var(--loss)"><title>{`${dayLabel(b.t)} : ${money(b.out)}`}</title></rect> : null}
-            {i % labelEvery === 0 ? <text x={L + i * bw + bw / 2} y={H - 8} textAnchor="middle">{new Date(b.t).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</text> : null}
-          </g>
-        ))}
+        {sums.map((b, i) => {
+          const x = L + i * bw, w = b.out > 0 ? bw * 0.4 : bw * 0.64, x0 = b.out > 0 ? x + bw * 0.1 : x + bw * 0.18;
+          return (
+            <g key={b.t}>
+              {b.made > 0 ? <rect x={x0} width={w} y={y(b.made)} height={y(0) - y(b.made)} rx="2" fill="var(--sheep)"><title>{`${dayLabel(b.t)} : généré ${sfl(b.made)}`}</title></rect> : null}
+              {b.spent > 0 ? <rect x={x0} width={w} y={y(0)} height={y(-b.spent) - y(0)} rx="2" fill="var(--loss)"><title>{`${dayLabel(b.t)} : dépensé ${sfl(-b.spent)}`}</title></rect> : null}
+              {b.out > 0 ? <rect x={x + bw * 0.52} width={bw * 0.38} y={y(b.out)} height={y(0) - y(b.out)} rx="2" fill="var(--sky)"><title>{`${dayLabel(b.t)} : sorti du jeu ${sfl(b.out)}`}</title></rect> : null}
+              {i % labelEvery === 0 ? <text x={x + bw / 2} y={H - 8} textAnchor="middle">{new Date(b.t).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</text> : null}
+            </g>
+          );
+        })}
       </svg>
       <div className="lg2">
-        <span><i style={{ background: "var(--sheep)" }} />Entrées</span>
-        <span><i style={{ background: "var(--loss)" }} />Sorties</span>
+        <span><i style={{ background: "var(--sheep)" }} />Généré</span>
+        <span><i style={{ background: "var(--loss)" }} />Dépensé</span>
+        <span><i style={{ background: "var(--sky)" }} />Sortie du jeu</span>
       </div>
     </section>
   );
